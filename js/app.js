@@ -96,9 +96,32 @@ const actions = {
     stepBeats(n) {
         const seq = store.seq
         const beat = beatSeconds(seq.bpm)
-        const cur = store.playhead
+        const off = seq.gridOffset || 0
+        const cur = store.playhead - off
         const target = n > 0 ? Math.floor(cur / beat + 1e-6) * beat + n * beat : Math.ceil(cur / beat - 1e-6) * beat + n * beat
-        actions.seek(target)
+        actions.seek(target + off)
+    },
+
+    async detectTempo() {
+        const seq = store.seq
+        await audio.mix(store.project, seq)
+        const master = audio.currentMix(seq.id)?.master
+        if (!master) {
+            actions.status('Add audio to this sequence first')
+            return
+        }
+        const { detectTempo } = await import('./audio/tempo.js')
+        const channels = [master.getChannelData(0), master.getChannelData(1)]
+        const result = detectTempo(channels, master.sampleRate)
+        if (!result) {
+            actions.status('The audio is too short to find a tempo')
+            return
+        }
+        store.edit('Detect tempo', s => {
+            s.bpm = result.bpm
+            s.gridOffset = Math.round(result.offset * 1000) / 1000
+        })
+        actions.status(`${result.bpm} BPM, first beat at ${result.offset.toFixed(3)} s`)
     },
 
     async play() {
@@ -453,16 +476,23 @@ const actions = {
                 actions.status(`Importing ${file.name}`)
                 const media = await importAudioFile(file)
                 const seq = store.seq
+                let extended = false
                 store.edit('Import audio', (s, p) => {
                     p.media[media.id] = media
                     let track = s.audioTracks.find(t => t.id === store.selection.track) || s.audioTracks.find(t => !t.clips.length)
                     if (!track) track = edits.addTrack(s, 'audio')
+                    // A song longer than the sequence extends the sequence to fit it.
+                    const end = store.playhead + media.duration
+                    if (end > s.duration) {
+                        s.duration = Math.ceil(end * s.fps) / s.fps
+                        extended = true
+                    }
                     edits.insertClip(track, model.createAudioClip({
                         mediaId: media.id, name: media.name, start: store.playhead,
                         duration: Math.min(media.duration, Math.max(1 / seq.fps, s.duration - store.playhead)),
                     }))
                 })
-                actions.status(`${media.name} is on the timeline`)
+                actions.status(extended ? `${media.name} is on the timeline; the sequence now runs to its end` : `${media.name} is on the timeline`)
             } catch (err) {
                 console.error(err)
                 actions.status(`Could not import ${file.name}: ${err?.message || 'unsupported audio'}`)
@@ -903,9 +933,10 @@ store.on('project', ({ reason } = {}) => {
     }
     clearTimeout(audioTimer)
     audioTimer = setTimeout(async () => {
-        const wasPlaying = store.playing
+        const before = audio.currentMix(store.seq?.id)
         await prepareAudio()
-        if (wasPlaying && store.playing) audio.play(store.seq, store.playhead)
+        // Restart playback only when the edit changed what is heard.
+        if (store.playing && audio.currentMix(store.seq?.id) !== before) audio.play(store.seq, store.playhead)
     }, reason === 'open' || reason === 'sequence' ? 0 : 250)
 })
 store.on('playhead', () => { dirty = true })
@@ -916,7 +947,8 @@ let lastPrefetch = 0
 function frame(now) {
     requestAnimationFrame(frame)
     const seq = store.seq
-    if (!seq) return
+    // An export owns the renderers until it finishes.
+    if (!seq || renderer.exporting) return
     if (store.playing) {
         let t = audio.time()
         const range = store.loopPlayback ? model.workRange(seq) : { start: 0, end: seq.duration }
@@ -962,11 +994,18 @@ try {
 } catch (err) {
     console.warn('[timeline] could not read saved projects', err)
 }
+let firstVisit = false
 if (!project) {
     project = createDemoProject()
+    firstVisit = true
     try { await saveProject(project) } catch { /* storage unavailable; the project still works */ }
 }
 store.openProject(project)
+if (firstVisit) {
+    // Open the demo on its drop rather than on the fade from black.
+    const drop = store.seq.markers.find(m => m.name === 'Drop')
+    if (drop) store.setPlayhead(drop.time + 1)
+}
 resizePreview()
 timeline.zoomToFit()
 refreshChrome()

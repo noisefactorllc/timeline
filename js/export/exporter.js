@@ -70,38 +70,40 @@ export async function exportSequence({ seq, project, renderer, pool, audio, sett
     await audio.mix(project, seq)
 
     const previous = { width: pool.width, height: pool.height }
-    pool.resizeAll(width, height)
-    pool.resetAll()
-
-    const canvas = document.createElement('canvas')
-    canvas.width = width
-    canvas.height = height
-    const ctx = canvas.getContext('2d', { alpha: false })
-
-    let writable = null
-    let target
-    if (fileHandle) {
-        writable = await fileHandle.createWritable()
-        target = new StreamTarget(writable, { chunked: true })
-    } else {
-        target = new BufferTarget()
-    }
-    const format = settings.format === 'webm'
-        ? new WebMOutputFormat()
-        : new Mp4OutputFormat({ fastStart: fileHandle ? false : 'in-memory' })
-    const output = new Output({ format, target })
-    const quality = QUALITIES[settings.quality] || QUALITY_HIGH
-    const videoSource = new CanvasSource(canvas, { codec: codecs.video, quality, keyFrameInterval: 2, sizeChangeBehavior: 'contain' })
-    output.addVideoTrack(videoSource, { frameRate: fps })
-    let audioSource = null
-    if (withAudio) {
-        audioSource = new AudioBufferSource({ codec: codecs.audio, quality: QUALITY_HIGH })
-        output.addAudioTrack(audioSource)
-    }
-
     const aborted = () => signal?.aborted
     const startedAt = performance.now()
+    let writable = null
+    let output = null
+    renderer.exporting = true
     try {
+        pool.resizeAll(width, height)
+        pool.resetAll()
+
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d', { alpha: false })
+
+        let target
+        if (fileHandle) {
+            writable = await fileHandle.createWritable()
+            target = new StreamTarget(writable, { chunked: true })
+        } else {
+            target = new BufferTarget()
+        }
+        const format = settings.format === 'webm'
+            ? new WebMOutputFormat()
+            : new Mp4OutputFormat({ fastStart: fileHandle ? false : 'in-memory' })
+        output = new Output({ format, target })
+        const quality = QUALITIES[settings.quality] || QUALITY_HIGH
+        const videoSource = new CanvasSource(canvas, { codec: codecs.video, quality, keyFrameInterval: 2, sizeChangeBehavior: 'contain' })
+        output.addVideoTrack(videoSource, { frameRate: fps })
+        let audioSource = null
+        if (withAudio) {
+            audioSource = new AudioBufferSource({ codec: codecs.audio, quality: QUALITY_HIGH })
+            output.addAudioTrack(audioSource)
+        }
+
         await output.start()
 
         // Pre-roll stateful programs into the range, as continuous playback would have.
@@ -153,11 +155,12 @@ export async function exportSequence({ seq, project, renderer, pool, audio, sett
         const blob = fileHandle ? null : new Blob([target.buffer], { type: mimeType })
         return { blob, frames, videoCodec: codecs.video, audioCodec: withAudio ? codecs.audio : null, mimeType }
     } catch (err) {
-        try { await output.cancel() } catch { /* already closed */ }
+        try { await output?.cancel() } catch { /* already closed */ }
         try { await writable?.abort?.() } catch { /* nothing to abort */ }
         throw err
     } finally {
         pool.resizeAll(previous.width, previous.height)
         pool.resetAll()
+        renderer.exporting = false
     }
 }

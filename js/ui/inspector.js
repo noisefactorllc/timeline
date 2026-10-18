@@ -42,7 +42,7 @@ const RESOLUTIONS = [
 
 export const SHORTCUTS = [
     ['Space', 'Play or pause'],
-    ['J K L', 'Reverse, stop, forward'],
+    ['J K L', 'Back a bar, stop, play'],
     ['Left / Right', 'Step one frame'],
     ['Shift Left / Right', 'Step one beat'],
     ['Up / Down', 'Previous or next edit'],
@@ -53,6 +53,7 @@ export const SHORTCUTS = [
     ['Cmd K', 'Cut at playhead'],
     ['Cmd D', 'Add transition at nearest cut'],
     ['Cmd C / V', 'Copy and paste at playhead'],
+    ['Shift Cmd D', 'Duplicate after the selection'],
     ['Delete', 'Delete selection'],
     ['Cmd Z / Shift Cmd Z', 'Undo and redo'],
     ['= / - / \\', 'Zoom in, out, fit'],
@@ -85,7 +86,7 @@ export class InspectorView {
         if (sel.post) return { key: `post:${seq.id}`, kind: 'post' }
         if (sel.transition) {
             const found = findTransition(seq, sel.transition)
-            if (found) return { key: `transition:${sel.transition}`, kind: 'transition', ...found }
+            if (found) return { ...found, key: `transition:${sel.transition}`, kind: 'transition' }
         }
         if (sel.marker) {
             const marker = seq.markers.find(m => m.id === sel.marker)
@@ -94,7 +95,7 @@ export class InspectorView {
         if (sel.clips.size > 1) return { key: `multi:${[...sel.clips].sort().join(',')}`, kind: 'multi', ids: [...sel.clips] }
         if (sel.clips.size === 1) {
             const found = findClip(seq, [...sel.clips][0])
-            if (found) return { key: `clip:${found.clip.id}`, kind: found.kind === 'audio' ? 'audio' : found.clip.type, ...found }
+            if (found) return { ...found, key: `clip:${found.clip.id}`, kind: found.kind === 'audio' ? 'audio' : found.clip.type }
         }
         return { key: `sequence:${seq.id}`, kind: 'sequence', seq }
     }
@@ -595,6 +596,12 @@ export class InspectorView {
         wiring.append(el('kbd', '', { text: 'audioBand' }), el('span', '', { text: 'low, mid, high, vol, raw' }))
         const keys = el('div', 'tl-kbd-list')
         for (const [k, v] of SHORTCUTS) keys.append(el('kbd', '', { text: k }), el('span', '', { text: v }))
+        const detect = el('div', 'tl-button-row')
+        detect.style.marginTop = '8px'
+        const detectBtn = el('button', 'tl-button', { type: 'button', title: 'Find the tempo and first beat of this sequence\u2019s audio' })
+        detectBtn.append(icon('graphic_eq'), document.createTextNode('Detect tempo from audio'))
+        detectBtn.addEventListener('click', () => this.actions.detectTempo())
+        detect.append(detectBtn)
         body.append(
             this._section('Format', this._grid(
                 this._selectField('Resolution', resOptions, () => `${this.store.seq.width}x${this.store.seq.height}`, v => {
@@ -608,8 +615,9 @@ export class InspectorView {
             this._section('Tempo', this._grid(
                 this._numberField('BPM', () => this.store.seq.bpm, v => editS('Change tempo', s => { s.bpm = v }), { step: 1, min: 20, max: 300, digits: 2 }),
                 this._numberField('Beats per bar', () => this.store.seq.beatsPerBar, v => editS('Change meter', s => { s.beatsPerBar = Math.round(v) }), { step: 1, min: 1, max: 16, digits: 0 }),
+                this._numberField('First beat s', () => this.store.seq.gridOffset || 0, v => editS('Move beat grid', s => { s.gridOffset = Math.max(0, v) }), { step: 0.01, min: 0, digits: 3 }),
                 this._numberField('Audio sensitivity', () => this.store.seq.audioSensitivity ?? 1, v => editS('Change sensitivity', s => { s.audioSensitivity = v }), { step: 0.1, min: 0.1, max: 8, digits: 1 }),
-            )),
+            ), detect),
             this._section('Audio in the DSL', wiring),
             this._section('Keyboard', keys),
         )

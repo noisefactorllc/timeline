@@ -7,6 +7,7 @@
  */
 
 import { ProgramRenderer } from './programRenderer.js'
+import { loadThumb, saveThumb } from '../storage/db.js'
 
 export const THUMB_W = 192
 export const THUMB_H = 108
@@ -58,12 +59,36 @@ export class Thumbnails {
         if (this.failed.has(hashString(dsl))) return Promise.resolve(null)
         if (!this.waiters.has(key)) {
             this.waiters.set(key, [])
-            this.queue.push({ key, dsl, phase, priority })
-            this.queue.sort((a, b) => a.priority - b.priority)
+            this._fromStore(key).then(bitmap => {
+                if (bitmap) {
+                    this._finish(key, bitmap)
+                    return
+                }
+                this.queue.push({ key, dsl, phase, priority })
+                this.queue.sort((a, b) => a.priority - b.priority)
+                this._run()
+            })
         }
-        const promise = new Promise(resolve => this.waiters.get(key).push(resolve))
-        this._run()
-        return promise
+        return new Promise(resolve => this.waiters.get(key).push(resolve))
+    }
+
+    async _fromStore(key) {
+        try {
+            const record = await loadThumb(key)
+            if (!record) return null
+            return await createImageBitmap(new Blob([record.bytes], { type: record.type }))
+        } catch {
+            return null
+        }
+    }
+
+    async _toStore(key, canvas) {
+        try {
+            const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/webp', 0.82))
+            if (blob) await saveThumb(key, await blob.arrayBuffer(), blob.type)
+        } catch {
+            // The cache is a convenience; a failed write only costs a re-render later.
+        }
     }
 
     _finish(key, bitmap) {
@@ -106,9 +131,12 @@ export class Thumbnails {
                     } catch {
                         bitmap = null
                     }
+                    if (bitmap) this._toStore(item.key, this.renderer.canvas)
                     this._finish(item.key, bitmap)
                     await new Promise(r => requestAnimationFrame(r))
                 }
+                // Leave the main thread room between programs: compiling is the expensive part.
+                await new Promise(r => setTimeout(r, 120))
             }
         } finally {
             this._running = false

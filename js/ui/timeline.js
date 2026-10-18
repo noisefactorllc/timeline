@@ -216,6 +216,7 @@ export class TimelineView {
         const beat = beatSeconds(seq.bpm) * this.pps
         this.root.style.setProperty('--tl-bar-px', `${bar}px`)
         this.root.style.setProperty('--tl-beat-px', `${beat >= 6 ? beat : bar}px`)
+        this.root.style.setProperty('--tl-grid-x', `${(seq.gridOffset || 0) * this.pps}px`)
 
         this._renderHeaders(seq)
         this._renderLanes(seq)
@@ -478,12 +479,13 @@ export class TimelineView {
         if (useBars) {
             const bar = barSeconds(seq.bpm, seq.beatsPerBar)
             const beat = beatSeconds(seq.bpm)
+            const off = seq.gridOffset || 0
             let every = 1
             while (bar * every * pps < 56) every *= 2
-            const firstBar = Math.floor(t0 / bar)
-            for (let i = firstBar; i * bar <= t1; i++) {
+            const firstBar = Math.floor((t0 - off) / bar)
+            for (let i = firstBar; off + i * bar <= t1; i++) {
                 if (i < 0) continue
-                const x = i * bar * pps - left
+                const x = (off + i * bar) * pps - left
                 const major = i % every === 0
                 g.fillStyle = major ? dim : muted
                 g.fillRect(Math.round(x), major ? 12 : 20, 1, major ? h - 12 : h - 20)
@@ -491,7 +493,7 @@ export class TimelineView {
                 if (beat * pps >= 10) {
                     g.fillStyle = muted
                     for (let b = 1; b < seq.beatsPerBar; b++) {
-                        const bx = (i * bar + b * beat) * pps - left
+                        const bx = (off + i * bar + b * beat) * pps - left
                         g.fillRect(Math.round(bx), h - 6, 1, 6)
                     }
                 }
@@ -692,7 +694,8 @@ export class TimelineView {
             for (const p of points) consider(t, p)
             if (this.store.view.beatGrid) {
                 const beat = beatSeconds(seq.bpm)
-                consider(t, Math.round(t / beat) * beat)
+                const off = seq.gridOffset || 0
+                consider(t, Math.round((t - off) / beat) * beat + off)
             }
         }
         if (!best) {

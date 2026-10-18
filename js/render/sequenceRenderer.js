@@ -48,6 +48,7 @@ export class SequenceRenderer {
         this.getProject = getProject
         this.composites = new Map()
         this.lastMissing = 0
+        this.exporting = false
     }
 
     _composite(path) {

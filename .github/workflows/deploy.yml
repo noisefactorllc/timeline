@@ -1,0 +1,74 @@
+name: Deploy
+
+# Scaffold is the sole authority for timeline deploys. This workflow runs
+# the unit suite and a syntax check, then fires the workflow_dispatch at
+# scaffold's static-site-release, which clones this repo at the pushed SHA,
+# stages a clean tree (index.html + css/ + js/ + img/), writes
+# deployment-meta.json, and publishes it to timeline.noisedeck.app.
+#
+# This repo carries no deploy secrets: only the EHSRE app private key,
+# which is scoped to dispatching scaffold workflows.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'index.html'
+      - 'css/**'
+      - 'js/**'
+      - 'img/**'
+      - 'tests/unit/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/deploy.yml'
+
+permissions: {}
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Unit tests and syntax check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '22'
+      - name: Syntax check every module
+        run: npm run lint
+      - name: Unit tests
+        run: npm test
+
+  trigger-scaffold-release:
+    name: Dispatch scaffold static-site-release
+    needs: test
+    runs-on: ubuntu-latest
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    steps:
+      - name: Mint scaffold GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: Iv23liy6T6BW0BXuZRzx
+          private-key: ${{ secrets.EHSRE_APP_PRIVATE_KEY }}
+          owner: noisefactorllc
+          repositories: scaffold
+
+      - name: Dispatch scaffold static-site-release for timeline
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          gh workflow run static-site-release.yml \
+            --repo noisefactorllc/scaffold \
+            --ref main \
+            -f site=timeline \
+            -f sha=${{ github.sha }}
+          echo "Dispatched scaffold static-site-release for timeline @ ${{ github.sha }}"

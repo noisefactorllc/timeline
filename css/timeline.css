@@ -841,6 +841,7 @@ button {
     background-image:
         repeating-linear-gradient(90deg, var(--tl-grid-bar) 0 1px, transparent 1px var(--tl-bar-px, 64px)),
         repeating-linear-gradient(90deg, var(--tl-grid-beat) 0 1px, transparent 1px var(--tl-beat-px, 16px));
+    background-position-x: var(--tl-grid-x, 0);
 }
 
 .tl-inout {
@@ -939,8 +940,17 @@ button {
 }
 
 .tl-clip.is-selected {
-    box-shadow: inset 0 2px 0 var(--tint), inset 0 0 0 2px var(--hf-text-bright);
     z-index: 4;
+}
+
+.tl-clip.is-selected::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 2px solid var(--hf-text-bright);
+    border-radius: 4px;
+    pointer-events: none;
+    z-index: 3;
 }
 
 .tl-clip.is-dragging {
@@ -1368,22 +1378,25 @@ button {
     text-transform: var(--hf-text-transform-heading, uppercase);
 }
 
+.tl-insp-body > * {
+    flex-shrink: 0;
+}
+
 .tl-editor-wrap {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    min-height: 0;
 }
 
 .tl-editor {
     display: block;
-    min-height: 260px;
-    height: 46vh;
-    max-height: 640px;
+    height: clamp(220px, 34vh, 560px);
     border-radius: var(--hf-radius-sm);
     overflow: hidden;
     border: 1px solid var(--hf-bg-elevated);
-    --hf-font-family-mono: var(--tl-font-mono);
+    --code-editor-font: var(--tl-font-mono);
+    --code-editor-font-size: 12px;
+    --code-editor-line-height: 1.55;
 }
 
 .tl-editor-status {

@@ -6,7 +6,7 @@
  */
 
 const DB_NAME = 'timeline'
-const DB_VERSION = 1
+const DB_VERSION = 2
 
 let dbPromise = null
 
@@ -22,6 +22,7 @@ function openDb() {
             const db = req.result
             if (!db.objectStoreNames.contains('projects')) db.createObjectStore('projects', { keyPath: 'id' })
             if (!db.objectStoreNames.contains('media')) db.createObjectStore('media', { keyPath: 'id' })
+            if (!db.objectStoreNames.contains('thumbs')) db.createObjectStore('thumbs', { keyPath: 'key' })
         }
         req.onsuccess = () => {
             const db = req.result
@@ -81,6 +82,21 @@ export function saveMedia({ id, name, type, bytes }) {
 
 export function loadMedia(id) {
     return run('media', 'readonly', os => os.get(id))
+}
+
+// --- thumbnail cache --------------------------------------------------------
+
+const THUMB_TTL_MS = 7 * 24 * 3600 * 1000
+
+/** A cached thumbnail's image bytes, or null when missing or expired. */
+export async function loadThumb(key) {
+    const record = await run('thumbs', 'readonly', os => os.get(key))
+    if (!record || Date.now() - record.storedAt > THUMB_TTL_MS) return null
+    return record
+}
+
+export function saveThumb(key, bytes, type) {
+    return run('thumbs', 'readwrite', os => os.put({ key, bytes, type, storedAt: Date.now() }))
 }
 
 // --- small preferences ----------------------------------------------------

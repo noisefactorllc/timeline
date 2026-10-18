@@ -74,6 +74,7 @@ export function createSequence({
         duration,
         bpm,
         beatsPerBar,
+        gridOffset: 0,
         inPoint: null,
         outPoint: null,
         audioSensitivity: 1,
