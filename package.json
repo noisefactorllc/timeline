@@ -1,0 +1,22 @@
+{
+  "name": "timeline",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Timeline editor for Noisemaker DSL programs: tracks, transitions, a shared post chain and music-video export.",
+  "type": "module",
+  "author": "Noise Factor LLC",
+  "license": "UNLICENSED",
+  "scripts": {
+    "dev": "node scripts/dev-server.mjs 3027",
+    "test": "node --test 'tests/unit/**/*.test.js'",
+    "test:e2e": "playwright test",
+    "lint": "find js -name '*.js' -print0 | xargs -0 -n1 node --check"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "mediabunny": "1.61.6"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

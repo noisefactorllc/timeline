@@ -1,0 +1,13 @@
+node_modules/
+test-results/
+playwright-report/
+playwright/.cache/
+dist/
+site-dist/
+*.log
+.DS_Store
+
+# Agent planning scratch, never committed
+docs/superpowers/
+docs/plans/
+.superpowers/

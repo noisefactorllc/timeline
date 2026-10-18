@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="neutral-dark" data-language="industrial">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark">
+    <title>Timeline</title>
+    <meta name="description" content="Cut Noisemaker DSL programs to music on a timeline, with transitions, a shared post chain and music-video export.">
+    <meta name="author" content="Noise Factor">
+    <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
+
+    <link rel="preconnect" href="https://fonts.noisefactor.io" crossorigin>
+    <link rel="preconnect" href="https://shaders.noisedeck.app" crossorigin>
+    <link rel="preconnect" href="https://handfish.noisefactor.io" crossorigin>
+
+    <link rel="preload" href="https://fonts.noisefactor.io/fonts/atkinson-hyperlegible/AtkinsonHyperlegible-Blank.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="https://fonts.noisefactor.io/fonts/atkinson-hyperlegible/AtkinsonHyperlegible-Regular.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="https://fonts.noisefactor.io/fonts/noto-sans-mono/NotoSansMono-Blank.woff2" as="font" type="font/woff2" crossorigin>
+
+    <style>
+        @font-face {
+            font-family: 'Noto Sans Mono Blank';
+            src: url('https://fonts.noisefactor.io/fonts/noto-sans-mono/NotoSansMono-Blank.woff2') format('woff2');
+            font-weight: 100 900;
+            font-display: block;
+        }
+        @font-face {
+            font-family: 'Noto Sans Mono';
+            src: url('https://fonts.noisefactor.io/fonts/noto-sans-mono/NotoSansMono[wdth,wght].woff2') format('woff2');
+            font-weight: 100 900;
+            font-display: swap;
+        }
+    </style>
+
+    <link rel="stylesheet" href="https://handfish.noisefactor.io/0/styles/index.css">
+    <link rel="stylesheet" href="https://handfish.noisefactor.io/0/styles/themes/neutral.css">
+    <link rel="stylesheet" href="https://handfish.noisefactor.io/0/styles/industrial.css">
+
+    <script type="importmap">
+        {
+            "imports": {
+                "handfish": "https://handfish.noisefactor.io/0/handfish.esm.min.js",
+                "mediabunny": "https://cdn.jsdelivr.net/npm/mediabunny@1.61.6/dist/bundles/mediabunny.min.mjs",
+                "fflate": "https://cdn.jsdelivr.net/npm/fflate@0.8.3/esm/browser.js"
+            }
+        }
+    </script>
+
+    <link rel="stylesheet" href="css/timeline.css">
+</head>
+<body>
+    <div id="app" class="tl-app" data-state="booting">
+        <header class="tl-topbar">
+            <menu-bar id="menu" bar-label="Timeline menu"></menu-bar>
+        </header>
+
+        <aside id="library" class="tl-library" aria-label="Library"></aside>
+
+        <main class="tl-stage">
+            <div id="monitor" class="tl-monitor" aria-label="Program monitor"></div>
+        </main>
+
+        <aside id="inspector" class="tl-inspector" aria-label="Inspector"></aside>
+
+        <div id="splitter" class="tl-splitter" role="separator" aria-orientation="horizontal" aria-label="Resize timeline" tabindex="0"></div>
+
+        <section id="timeline" class="tl-timeline" aria-label="Timeline"></section>
+    </div>
+
+    <div id="boot" class="tl-boot" role="status" aria-live="polite">
+        <div class="tl-boot-mark">TIMELINE</div>
+        <div id="boot-status" class="tl-boot-status">Loading the engine</div>
+    </div>
+
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>
