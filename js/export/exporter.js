@@ -11,12 +11,19 @@
 
 import {
     Output, Mp4OutputFormat, WebMOutputFormat, BufferTarget, StreamTarget, CanvasSource, AudioBufferSource,
-    canEncodeVideo, canEncodeAudio, QUALITY_MEDIUM, QUALITY_HIGH, QUALITY_VERY_HIGH,
+    canEncodeVideo, canEncodeAudio, Quality, QUALITY_HIGH,
 } from 'mediabunny'
 import { frameCount } from '../model/time.js'
 import { SAMPLE_RATE } from '../audio/media.js'
 
-const QUALITIES = { medium: QUALITY_MEDIUM, high: QUALITY_HIGH, best: QUALITY_VERY_HIGH }
+// Bits per pixel per frame. Left to choose its own quantizer, a hardware
+// encoder spent 82 Mbps on grainy 720p shader output; explicit rates keep a
+// music video a sensible size (1080p30: about 6, 12 and 22 Mbps).
+const BITS_PER_PIXEL = { medium: 0.1, high: 0.2, best: 0.35 }
+
+export function videoBitrate(quality, width, height, fps) {
+    return Math.round((BITS_PER_PIXEL[quality] || BITS_PER_PIXEL.high) * width * height * fps)
+}
 const VIDEO_CODECS = { mp4: ['avc', 'hevc', 'vp9', 'av1'], webm: ['vp9', 'vp8', 'av1'] }
 const AUDIO_CODECS = { mp4: ['aac', 'opus'], webm: ['opus'] }
 export const PREROLL_SECONDS = 2
@@ -95,7 +102,7 @@ export async function exportSequence({ seq, project, renderer, pool, audio, sett
             ? new WebMOutputFormat()
             : new Mp4OutputFormat({ fastStart: fileHandle ? false : 'in-memory' })
         output = new Output({ format, target })
-        const quality = QUALITIES[settings.quality] || QUALITY_HIGH
+        const quality = new Quality({ bitrate: videoBitrate(settings.quality, width, height, fps) })
         const videoSource = new CanvasSource(canvas, { codec: codecs.video, quality, keyFrameInterval: 2, sizeChangeBehavior: 'contain' })
         output.addVideoTrack(videoSource, { frameRate: fps })
         let audioSource = null

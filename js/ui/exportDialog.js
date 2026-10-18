@@ -4,7 +4,7 @@
  */
 
 import { registerEscapeable, unregisterEscapeable } from 'handfish'
-import { exportSequence, probeCodecs } from '../export/exporter.js'
+import { exportSequence, probeCodecs, videoBitrate } from '../export/exporter.js'
 import { workRange } from '../model/project.js'
 import { formatTimecode, frameCount } from '../model/time.js'
 
@@ -118,9 +118,11 @@ export class ExportDialog {
             }
             start.disabled = false
             const a = withAudio.checked ? (codecs.audio ? codecs.audio.toUpperCase() : 'no audio encoder here, video only') : 'no audio'
-            note.textContent = `${frames} frames at ${seq.fps} fps, ${formatTimecode(r.end - r.start, seq.fps)}. ${codecs.video.toUpperCase()} video, ${a}.`
+            const mbps = videoBitrate(quality.value, w, h, seq.fps) / 1e6
+            const mb = Math.round(mbps * (r.end - r.start) / 8 + (withAudio.checked ? 0.024 * (r.end - r.start) : 0))
+            note.textContent = `${frames} frames at ${seq.fps} fps, ${formatTimecode(r.end - r.start, seq.fps)}. ${codecs.video.toUpperCase()} video at ${mbps.toFixed(1)} Mbps, ${a}. About ${mb} MB.`
         }
-        for (const s of [format, size, range, withAudio]) s.addEventListener('change', update)
+        for (const s of [format, size, range, quality, withAudio]) s.addEventListener('change', update)
         body.append(grid, note)
 
         const actions = el('div', 'tl-dialog-actions')
