@@ -220,7 +220,13 @@ export function createDemoProject() {
     main.audioTracks[0].name = 'Drums'
     main.audioTracks[1].name = 'Music'
     const cinema = postPreset('cinema')
-    main.post = { enabled: true, preset: 'cinema', dsl: cinema.dsl, loop: BAR * 4 }
+    // The main post chain blooms on the kick: channel 1 is the drums track.
+    main.post = {
+        enabled: true,
+        preset: 'cinema',
+        loop: BAR * 4,
+        dsl: cinema.dsl.replace('audio(band: audioBand.low,', 'audio(band: audioBand.low, channel: 1,'),
+    }
 
     // The drop: a nested sequence that cuts on every bar.
     const drop = createSequence({ name: 'Drop', duration: BAR * 8, fps: 30, tracks: 2, audioTracks: 0 })

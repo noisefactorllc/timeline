@@ -2,8 +2,8 @@
  * Thumbnails for clip filmstrips and library cards, rendered by one small
  * dedicated renderer so they never borrow a renderer from the monitor.
  * Requests are cached by program and phase; programs compile once per
- * batch. Thumbnails see silent audio, so they show a program's resting
- * look rather than whatever the playhead happens to hear.
+ * batch. Thumbnails hear a steady mid-level signal rather than whatever
+ * the playhead happens to hear.
  */
 
 import { ProgramRenderer } from './programRenderer.js'
@@ -24,7 +24,12 @@ export function hashString(s) {
 
 export class Thumbnails {
     constructor({ AudioState }) {
+        // A steady mid-level signal on the mix and every channel, so
+        // audio-driven programs show a representative frame, not their floor.
         this.audioState = new AudioState()
+        this.audioState.setBands(0.5, 0.5, 0.5)
+        this.audioState.registerDefaultChannels?.(8)
+        for (let ch = 1; ch <= 8; ch++) this.audioState.getDefaultChannelState?.(ch)?.setBands(0.5, 0.5, 0.5)
         this.renderer = null
         this.cache = new Map()
         this.failed = new Set()
@@ -41,7 +46,7 @@ export class Thumbnails {
     }
 
     key(dsl, phase) {
-        return `${hashString(dsl)}:${Math.round(phase * 1000)}`
+        return `a2:${hashString(dsl)}:${Math.round(phase * 1000)}`
     }
 
     get(dsl, phase) {

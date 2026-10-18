@@ -26,7 +26,9 @@ export class MonitorView {
         const overlay = el('div', 'tl-monitor-overlay')
         this.badge = el('div', 'tl-monitor-badge')
         this.badge.hidden = true
-        overlay.append(this.badge)
+        this.compiling = el('div', 'tl-monitor-badge tl-monitor-compiling', 'Compiling programs')
+        this.compiling.hidden = true
+        overlay.append(this.badge, this.compiling)
         frame.append(overlay)
 
         const bar = el('div', 'tl-monitor-bar')
@@ -131,6 +133,11 @@ export class MonitorView {
         }
         this.canvas.style.width = `${Math.floor(w)}px`
         this.canvas.style.height = `${Math.floor(h)}px`
+    }
+
+    setCompiling(on) {
+        if (this.compiling.hidden === !on) return
+        this.compiling.hidden = !on
     }
 
     /** Draw a rendered frame. */

@@ -10,11 +10,14 @@
 
 import { clipEnd, findClip, createProgramClip, createSequenceClip, createAudioClip, wouldCreateCycle } from '../model/project.js'
 import { transitionSpan } from '../model/evaluate.js'
-import { moveClips, trimClip, setTransitionDuration, addTransition, cutNear, insertClip } from '../model/edit.js'
+import { moveClips, trimClip, setTransitionDuration, addTransition, cutNear, insertClip, addMarker } from '../model/edit.js'
 import { formatTimecode, formatRulerLabel, barSeconds, beatSeconds, loopPhase, clamp } from '../model/time.js'
 import { transitionPreset, postPreset } from '../data/presets.js'
 import { THUMB_W, THUMB_H } from '../render/thumbnails.js'
 import { cachedAudioBuffer, waveformPeaks } from '../audio/media.js'
+import { showContextMenu } from './contextMenu.js'
+import { TRANSITIONS } from '../data/presets.js'
+import { splitClip, deleteTransition } from '../model/edit.js'
 
 const SNAP_PX = 8
 const DRAG_THRESHOLD = 3
@@ -173,6 +176,7 @@ export class TimelineView {
         cap.addEventListener('pointerdown', e => this._onRulerDown(e))
         this.lanes.addEventListener('pointerdown', e => this._onLanesDown(e))
         this.lanes.addEventListener('dblclick', e => this._onDblClick(e))
+        this.lanes.addEventListener('contextmenu', e => this._onContextMenu(e))
         this.lanes.addEventListener('dragover', e => this._onDragOver(e))
         this.lanes.addEventListener('dragleave', e => this._onDragLeave(e))
         this.lanes.addEventListener('drop', e => this._onDrop(e))
@@ -344,6 +348,12 @@ export class TimelineView {
             dimR.style.left = `${this.timeToX(outT)}px`
             dimR.style.width = `${Math.max(0, this.timeToX(seq.duration - outT))}px`
             frag.append(dimL, dimR)
+        }
+        if (!seq.tracks.some(t => t.clips.length) && !seq.audioTracks.some(t => t.clips.length)) {
+            const empty = el('div', 'tl-lanes-empty')
+            empty.append(el('strong', '', { text: 'This sequence is empty' }),
+                document.createTextNode('Drag a program from the library onto a video track, and drop a song anywhere on the window to add audio.'))
+            frag.append(empty)
         }
         const end = el('div', 'tl-seq-end')
         end.style.left = `${this.timeToX(seq.duration)}px`
@@ -997,6 +1007,71 @@ export class TimelineView {
         }
         window.addEventListener('pointermove', move)
         window.addEventListener('pointerup', up)
+    }
+
+    _onContextMenu(e) {
+        e.preventDefault()
+        const seq = this.store.seq
+        const t = this._frameSnap(clamp(this.xToTime(e.clientX), 0, seq.duration))
+        const transitionEl = e.target.closest('.tl-transition')
+        const clipEl = e.target.closest('.tl-clip')
+        if (transitionEl) {
+            const id = transitionEl.dataset.transitionId
+            this.store.selectTransition(id)
+            const found = seq.tracks.flatMap(tr => tr.transitions).find(x => x.id === id)
+            const items = []
+            if (found?.from && found?.to) {
+                for (const preset of TRANSITIONS) {
+                    items.push({ label: preset.name, checked: found.preset === preset.id, onSelect: () => this.actions.applyTransitionPreset(preset.id) })
+                }
+                items.push({ separator: true })
+            }
+            items.push({ label: 'Remove transition', danger: true, onSelect: () => this.store.edit('Remove transition', s => deleteTransition(s, id)) })
+            showContextMenu(e.clientX, e.clientY, items)
+            return
+        }
+        if (clipEl) {
+            const id = clipEl.dataset.clipId
+            const found = findClip(seq, id)
+            if (!found) return
+            if (!this.store.selection.clips.has(id)) this.store.selectClip(id)
+            const visual = found.kind === 'visual'
+            const inside = t > found.clip.start && t < clipEnd(found.clip)
+            const bar = barSeconds(seq.bpm, seq.beatsPerBar)
+            const items = [
+                { label: 'Split here', disabled: !inside || found.track.locked, onSelect: () => this.store.edit('Split clip', s => { splitClip(s, id, t) }) },
+                { label: 'Duplicate', shortcut: 'Shift Cmd D', onSelect: () => this.actions.duplicate() },
+                { label: 'Copy', shortcut: 'Cmd C', onSelect: () => this.actions.copy() },
+            ]
+            if (visual) {
+                items.push({ separator: true })
+                items.push({
+                    label: 'Fade in', disabled: found.track.locked, onSelect: () => this.store.edit('Fade in', s => {
+                        const tr = s.tracks.find(x => x.id === found.track.id)
+                        return addTransition(tr, { from: null, to: id, duration: Math.min(bar, found.clip.duration) }) ? undefined : false
+                    }),
+                })
+                items.push({
+                    label: 'Fade out', disabled: found.track.locked, onSelect: () => this.store.edit('Fade out', s => {
+                        const tr = s.tracks.find(x => x.id === found.track.id)
+                        return addTransition(tr, { from: id, to: null, duration: Math.min(bar, found.clip.duration) }) ? undefined : false
+                    }),
+                })
+                if (found.clip.type === 'sequence') {
+                    items.push({ label: 'Open sequence', onSelect: () => this.store.setActiveSequence(found.clip.sequenceId) })
+                }
+            }
+            items.push({ separator: true }, { label: 'Delete', danger: true, shortcut: 'Del', onSelect: () => this.actions.deleteSelection() })
+            showContextMenu(e.clientX, e.clientY, items)
+            return
+        }
+        showContextMenu(e.clientX, e.clientY, [
+            { label: 'Paste here', disabled: !this.actions.hasClipboard(), onSelect: () => this.actions.pasteAt(t) },
+            { label: 'Add marker here', onSelect: () => this.store.edit('Add marker', s => { addMarker(s, t) }) },
+            { separator: true },
+            { label: 'Set in point here', onSelect: () => this.store.edit('Set in point', s => { s.inPoint = t; if (s.outPoint !== null && s.outPoint <= t) s.outPoint = null }) },
+            { label: 'Set out point here', onSelect: () => this.store.edit('Set out point', s => { s.outPoint = t; if (s.inPoint !== null && s.inPoint >= t) s.inPoint = null }) },
+        ])
     }
 
     _onDblClick(e) {

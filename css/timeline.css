@@ -530,6 +530,54 @@ button {
     display: none;
 }
 
+.tl-monitor-compiling {
+    left: auto;
+    right: 10px;
+    color: var(--hf-text-dim);
+}
+
+.tl-lanes-empty {
+    position: absolute;
+    left: 24px;
+    top: 50%;
+    translate: 0 -50%;
+    max-width: 52ch;
+    color: var(--hf-text-dim);
+    line-height: 1.6;
+    pointer-events: none;
+    z-index: 2;
+}
+
+.tl-lanes-empty strong {
+    display: block;
+    color: var(--hf-text-normal);
+}
+
+.tl-narrow {
+    display: none;
+}
+
+@media (max-width: 760px) {
+    .tl-narrow {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-content: center;
+        gap: 10px;
+        padding: 24px 16px;
+        text-align: center;
+        background: var(--hf-bg-base);
+        color: var(--hf-text-normal);
+        z-index: var(--hf-z-modal, 500);
+        line-height: 1.6;
+    }
+
+    .tl-narrow strong {
+        letter-spacing: 0.32em;
+        color: var(--hf-text-bright);
+    }
+}
+
 .tl-monitor-bar {
     display: flex;
     align-items: center;
@@ -1478,10 +1526,29 @@ button {
     justify-self: start;
 }
 
+/* --- context menu ---------------------------------------------------------- */
+
+.tl-context-menu {
+    position: fixed;
+    min-width: 200px;
+    z-index: var(--hf-z-dropdown, 100);
+}
+
+.tl-context-menu .hf-menu-item {
+    width: 100%;
+    border: 0;
+    font: inherit;
+    text-align: left;
+}
+
 /* --- dialogs --------------------------------------------------------------- */
 
 .tl-dialog {
-    width: min(520px, 92vw);
+    width: min(620px, 92vw);
+}
+
+.tl-dialog .tl-field-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .tl-dialog .hf-dialog-body {

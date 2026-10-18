@@ -125,6 +125,16 @@ const actions = {
     },
 
     async play() {
+        if (store.playing || actions._starting) return
+        actions._starting = true
+        try {
+            await actions._start()
+        } finally {
+            actions._starting = false
+        }
+    },
+
+    async _start() {
         await audio.unlock()
         const seq = store.seq
         const range = store.loopPlayback ? model.workRange(seq) : { start: 0, end: seq.duration }
@@ -310,6 +320,18 @@ const actions = {
         if (created.length) store.selectClips(created)
     },
 
+    hasClipboard() {
+        return !!clipboard?.length
+    },
+
+    pasteAt(t) {
+        const prev = store.playhead
+        store.playheads.set(store.activeSeqId, t)
+        actions.paste()
+        store.playheads.set(store.activeSeqId, prev)
+        store.emit('playhead')
+    },
+
     cutClips() {
         if (actions.copy()) actions.deleteSelection()
     },
@@ -476,6 +498,7 @@ const actions = {
                 actions.status(`Importing ${file.name}`)
                 const media = await importAudioFile(file)
                 const seq = store.seq
+                const firstAudio = !seq.audioTracks.some(t => t.clips.length)
                 let extended = false
                 store.edit('Import audio', (s, p) => {
                     p.media[media.id] = media
@@ -493,6 +516,8 @@ const actions = {
                     }))
                 })
                 actions.status(extended ? `${media.name} is on the timeline; the sequence now runs to its end` : `${media.name} is on the timeline`)
+                // The first song in a sequence sets its tempo and beat grid (one undo puts them back).
+                if (firstAudio) await actions.detectTempo()
             } catch (err) {
                 console.error(err)
                 actions.status(`Could not import ${file.name}: ${err?.message || 'unsupported audio'}`)
@@ -973,8 +998,7 @@ function frame(now) {
         const result = renderer.renderFrame(seq, f / seq.fps, { seek })
         monitor.draw(result.canvas)
         lastFrame = f
-        if (result.missing > 0 && !store.playing) app.dataset.compiling = 'true'
-        else delete app.dataset.compiling
+        monitor.setCompiling(result.missing > 0)
     }
     monitor.updateMeters(audio.state)
     if (now - lastPrefetch > 300) {
