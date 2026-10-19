@@ -69,6 +69,9 @@ function graphicDefaults({ enter = 'none', exit = 'none' } = {}) {
     }
 }
 
+export const TEXT_OUTLINE_DEFAULTS = { color: '#000000', width: 0.04 }
+export const TEXT_SHADOW_DEFAULTS = { color: '#000000b3', blur: 0.1, x: 0, y: 0.08 }
+
 export const TEXT_DEFAULTS = {
     text: 'Your words here',
     font: 'Inter',
@@ -81,6 +84,11 @@ export const TEXT_DEFAULTS = {
     align: 'center',
     maxWidth: 0.8,
     background: null,
+    backgroundPaddingX: 0.3,
+    backgroundPaddingY: 0.3,
+    backgroundRadius: 0,
+    outline: null,
+    shadow: null,
 }
 
 export function createProject({ name = 'Untitled project' } = {}) {

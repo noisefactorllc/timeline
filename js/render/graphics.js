@@ -191,6 +191,7 @@ export class GraphicsRenderer {
         this.getProject = getProject
         this.onChange = onChange
         this.canvases = new Map()
+        this.textLayers = new WeakMap()
         this.images = new Map()
         this.videos = new Map()
         onFontLoaded(() => this.onChange())
@@ -367,34 +368,102 @@ export class GraphicsRenderer {
         g.textAlign = clip.align
         const lines = wrapLines(g, clip.text, clip.maxWidth * width)
         const lineHeight = px * clip.lineHeight
-        const blockW = Math.max(1, ...lines.map(line => g.measureText(line).width))
+        const metrics = lines.map(line => g.measureText(line))
+        const blockW = Math.max(1, ...metrics.map(metric => metric.width))
         const blockH = lines.length * lineHeight
         const left = clip.align === 'left' ? 0 : clip.align === 'right' ? -blockW : -blockW / 2
         const top = -blockH / 2
         let visible = Infinity
         if (m.reveal < 1) visible = Math.floor(m.reveal * lines.reduce((n, line) => n + [...line].length, 0))
-        const pad = px * 0.3
+        const padX = px * (clip.backgroundPaddingX ?? 0.3)
+        const padY = px * (clip.backgroundPaddingY ?? 0.3)
+        const boxW = blockW + padX * 2
+        const boxH = blockH + padY * 2
+        const radius = Math.min(px * (clip.backgroundRadius ?? 0), boxW / 2, boxH / 2)
+        const outlineWidth = px * (clip.outline?.width || 0)
+        const spread = outlineWidth / 2
+        let x0 = Math.min(left - spread, left - (clip.background ? padX : 0))
+        let y0 = Math.min(top - spread, top - (clip.background ? padY : 0))
+        let x1 = Math.max(left + blockW + spread, left + blockW + (clip.background ? padX : 0))
+        let y1 = Math.max(top + blockH + spread, top + blockH + (clip.background ? padY : 0))
+        if (clip.shadow) {
+            const blur = px * clip.shadow.blur * 2
+            x0 = Math.min(x0, left - spread + px * clip.shadow.x - blur)
+            y0 = Math.min(y0, top - spread + px * clip.shadow.y - blur)
+            x1 = Math.max(x1, left + blockW + spread + px * clip.shadow.x + blur)
+            y1 = Math.max(y1, top + blockH + spread + px * clip.shadow.y + blur)
+        }
         return {
-            left: left - (clip.background ? pad : 0),
-            top: top - (clip.background ? pad : 0),
-            width: blockW + (clip.background ? pad * 2 : 0),
-            height: blockH + (clip.background ? pad * 2 : 0),
+            left: x0,
+            top: y0,
+            width: x1 - x0,
+            height: y1 - y0,
             paint: () => {
                 if (clip.background) {
                     g.fillStyle = clip.background
-                    g.fillRect(left - pad, top - pad, blockW + pad * 2, blockH + pad * 2)
+                    if (radius > 0) {
+                        g.beginPath()
+                        g.roundRect(left - padX, top - padY, boxW, boxH, radius)
+                        g.fill()
+                    } else {
+                        g.fillRect(left - padX, top - padY, boxW, boxH)
+                    }
                 }
-                g.fillStyle = clip.color
-                let remaining = visible
-                lines.forEach((line, i) => {
-                    if (remaining <= 0) return
-                    const chars = [...line]
-                    const shown = chars.length > remaining ? chars.slice(0, remaining).join('') : line
-                    remaining -= chars.length
-                    // A partly typed line keeps the position it has when complete.
-                    const x = clip.align === 'left' || shown === line ? 0 : clip.align === 'right' ? -(g.measureText(line).width - g.measureText(shown).width) : -(g.measureText(line).width - g.measureText(shown).width) / 2
-                    g.fillText(shown, x, top + lineHeight * (i + 0.5))
-                })
+                const paintText = ctx => {
+                    ctx.font = g.font
+                    ctx.letterSpacing = g.letterSpacing
+                    ctx.textBaseline = g.textBaseline
+                    ctx.textAlign = g.textAlign
+                    ctx.fillStyle = clip.color
+                    ctx.strokeStyle = clip.outline?.color || '#000000'
+                    ctx.lineWidth = outlineWidth
+                    ctx.lineJoin = 'round'
+                    let remaining = visible
+                    lines.forEach((line, i) => {
+                        if (remaining <= 0) return
+                        const chars = [...line]
+                        const shown = chars.length > remaining ? chars.slice(0, remaining).join('') : line
+                        remaining -= chars.length
+                        // A partly typed line keeps the position it has when complete.
+                        const x = clip.align === 'left' || shown === line ? 0 : clip.align === 'right' ? -(metrics[i].width - g.measureText(shown).width) : -(metrics[i].width - g.measureText(shown).width) / 2
+                        const y = top + lineHeight * (i + 0.5)
+                        if (outlineWidth > 0) ctx.strokeText(shown, x, y)
+                        ctx.fillText(shown, x, y)
+                    })
+                }
+                g.save()
+                if (clip.shadow) {
+                    // Shadow the complete glyph block once, so outlines cast filled
+                    // shadows and every line's foreground stays above every shadow.
+                    const inkLeft = Math.floor(Math.min(...metrics.map(metric => -metric.actualBoundingBoxLeft)) - spread - 2)
+                    const inkRight = Math.ceil(Math.max(...metrics.map(metric => metric.actualBoundingBoxRight)) + spread + 2)
+                    const inkTop = Math.floor(Math.min(...metrics.map((metric, i) => top + lineHeight * (i + 0.5) - metric.actualBoundingBoxAscent)) - spread - 2)
+                    const inkBottom = Math.ceil(Math.max(...metrics.map((metric, i) => top + lineHeight * (i + 0.5) + metric.actualBoundingBoxDescent)) + spread + 2)
+                    let layer = this.textLayers.get(clip)
+                    if (!layer) {
+                        const canvas = document.createElement('canvas')
+                        layer = { canvas, ctx: canvas.getContext('2d') }
+                        this.textLayers.set(clip, layer)
+                    }
+                    const w = Math.max(1, inkRight - inkLeft), h = Math.max(1, inkBottom - inkTop)
+                    if (layer.canvas.width !== w || layer.canvas.height !== h) {
+                        layer.canvas.width = w
+                        layer.canvas.height = h
+                    }
+                    layer.ctx.clearRect(0, 0, w, h)
+                    layer.ctx.save()
+                    layer.ctx.translate(-inkLeft, -inkTop)
+                    paintText(layer.ctx)
+                    layer.ctx.restore()
+                    const tf = g.getTransform()
+                    const x = px * clip.shadow.x, y = px * clip.shadow.y
+                    g.shadowColor = clip.shadow.color
+                    g.shadowBlur = px * clip.shadow.blur * Math.hypot(tf.a, tf.b)
+                    g.shadowOffsetX = tf.a * x + tf.c * y
+                    g.shadowOffsetY = tf.b * x + tf.d * y
+                    g.drawImage(layer.canvas, inkLeft, inkTop)
+                } else paintText(g)
+                g.restore()
             },
         }
     }

@@ -13,7 +13,7 @@
 
 import {
     SCHEMA_VERSION, BLEND_MODES, DEFAULT_POST_DSL, DEFAULT_PROGRAM_DSL, nestedSequenceIds,
-    FIT_MODES, MOTION_PRESETS, TEXT_ALIGN, TEXT_DEFAULTS, GRAPHIC_TYPES,
+    FIT_MODES, MOTION_PRESETS, TEXT_ALIGN, TEXT_DEFAULTS, TEXT_OUTLINE_DEFAULTS, TEXT_SHADOW_DEFAULTS, GRAPHIC_TYPES,
 } from './project.js'
 import { POST_PRESETS } from '../data/presets.js'
 import { isEaseName } from './ease.js'
@@ -371,6 +371,9 @@ function normalizeGraphic(clip, c, label, media, report) {
         clip.lineHeight = num('lineHeight', TEXT_DEFAULTS.lineHeight, 0.1, 10)
         clip.letterSpacing = num('letterSpacing', TEXT_DEFAULTS.letterSpacing, -1, 5)
         clip.maxWidth = num('maxWidth', TEXT_DEFAULTS.maxWidth, 0.01, 10)
+        for (const key of ['backgroundPaddingX', 'backgroundPaddingY', 'backgroundRadius']) clip[key] = num(key, TEXT_DEFAULTS[key], 0, 10)
+        clip.outline = normalizeTextEffect(c.outline, 'outline', TEXT_OUTLINE_DEFAULTS, label, report)
+        clip.shadow = normalizeTextEffect(c.shadow, 'shadow', TEXT_SHADOW_DEFAULTS, label, report)
         if (!TEXT_ALIGN.includes(clip.align)) {
             report('warning', label, `align "${clip.align}" is not one of ${TEXT_ALIGN.join(', ')}; it is centered`)
             clip.align = 'center'
@@ -383,6 +386,25 @@ function normalizeGraphic(clip, c, label, media, report) {
     if (!FIT_MODES.includes(clip.fit ?? 'contain')) report('warning', label, `fit "${clip.fit}" is not one of ${FIT_MODES.join(', ')}; it uses contain`)
     clip.fit = FIT_MODES.includes(clip.fit) ? clip.fit : 'contain'
     if (clip.type === 'video') clip.loopVideo = !!c.loopVideo
+}
+
+function normalizeTextEffect(raw, name, defaults, where, report) {
+    if (raw === undefined || raw === null) return null
+    if (!isObject(raw)) {
+        report('warning', where, `"${name}" must be an object or null; it is off`)
+        return null
+    }
+    const effect = { color: typeof raw.color === 'string' && raw.color.trim() ? raw.color : defaults.color }
+    for (const [key, fallback] of Object.entries(defaults)) {
+        if (key === 'color') continue
+        const min = key === 'x' || key === 'y' ? -10 : 0
+        const max = key === 'x' || key === 'y' ? 10 : 2
+        const value = raw[key]
+        const valid = isNumber(value) && value >= min && value <= max
+        if (value !== undefined && !valid) report('warning', where, `${name}.${key} must be a number from ${min} to ${max}; it uses ${fallback}`)
+        effect[key] = valid ? value : fallback
+    }
+    return effect
 }
 
 function checkPlacement(seq, track, report) {

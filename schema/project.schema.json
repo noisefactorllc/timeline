@@ -476,6 +476,80 @@
             }
           },
           "additionalProperties": false
+        },
+        "backgroundPaddingX": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10,
+          "default": 0.3,
+          "description": "Horizontal padding of the text background, as a multiple of the text size."
+        },
+        "backgroundPaddingY": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10,
+          "default": 0.3,
+          "description": "Vertical padding of the text background, as a multiple of the text size."
+        },
+        "backgroundRadius": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10,
+          "default": 0,
+          "description": "Corner radius of the text background, as a multiple of the text size."
+        },
+        "outline": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "default": null,
+          "properties": {
+            "color": {
+              "type": "string",
+              "default": "#000000"
+            },
+            "width": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2,
+              "default": 0.04,
+              "description": "Stroke width as a multiple of the text size."
+            }
+          },
+          "description": "An optional outline around the text glyphs. Null turns it off."
+        },
+        "shadow": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "default": null,
+          "properties": {
+            "color": {
+              "type": "string",
+              "default": "#000000b3"
+            },
+            "blur": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2,
+              "default": 0.1
+            },
+            "x": {
+              "type": "number",
+              "minimum": -10,
+              "maximum": 10,
+              "default": 0
+            },
+            "y": {
+              "type": "number",
+              "minimum": -10,
+              "maximum": 10,
+              "default": 0.08
+            }
+          },
+          "description": "An optional text shadow. Blur and offsets are multiples of the text size. Null turns it off."
         }
       },
       "description": "A clip on a video track. Program clips run a Noisemaker DSL program; a program that reads media() reads the composite of the tracks beneath it. Sequence clips nest a sequence. Text, image and video clips are graphics: drawn with transparency over the tracks beneath at a position, scale and rotation, with enter and exit motion."

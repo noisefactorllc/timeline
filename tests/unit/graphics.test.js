@@ -108,3 +108,47 @@ test('a title goes on the first track above everything showing, adding one when 
     assert.equal(freeAudioTrack(seq, 6, 8), seq.audioTracks[0])
     assert.equal(freeAudioTrack(seq, 1, 2), seq.audioTracks[1])
 })
+
+
+test('text background dimensions preserve old defaults and validate subtitle styling', () => {
+    const { project, problems } = normalizeProject({ sequences: { main: { tracks: [{ clips: [
+        { text: 'default', start: 0, duration: 1 },
+        { text: 'subtitle', start: 1, duration: 1, backgroundPaddingX: 34 / 52, backgroundPaddingY: 16 / 52, backgroundRadius: 22 / 52 },
+        { text: 'invalid', start: 2, duration: 1, backgroundPaddingX: -1, backgroundPaddingY: 'wide', backgroundRadius: Infinity },
+    ] }] } } })
+    const [plain, styled, invalid] = project.sequences.main.tracks[0].clips
+    for (const c of [plain, invalid, createTextClip()]) {
+        assert.equal(c.backgroundPaddingX, 0.3)
+        assert.equal(c.backgroundPaddingY, 0.3)
+        assert.equal(c.backgroundRadius, 0)
+    }
+    assert.equal(styled.backgroundPaddingX, 34 / 52)
+    assert.equal(styled.backgroundPaddingY, 16 / 52)
+    assert.equal(styled.backgroundRadius, 22 / 52)
+    assert.equal(problems.filter(p => /background(Padding|Radius)/.test(p.message)).length, 3)
+})
+
+
+test('text outline and shadow are optional, validated styles that survive a project round trip', () => {
+    const raw = { sequences: { main: { tracks: [{ clips: [
+        { text: 'plain', start: 0, duration: 1 },
+        { text: 'styled', start: 1, duration: 1, outline: { color: '#ff0000', width: 0.08 }, shadow: { color: '#00ff00', blur: 0.1, x: -0.2, y: 0.3 } },
+        { text: 'invalid', start: 2, duration: 1, outline: { width: -1 }, shadow: { blur: Infinity, x: 'left', y: 0.2 } },
+    ] }] } } }
+    const { project, problems } = normalizeProject(raw)
+    const [plain, styled, invalid] = project.sequences.main.tracks[0].clips
+    assert.equal(plain.outline, null)
+    assert.equal(plain.shadow, null)
+    assert.equal(createTextClip().outline, null)
+    assert.equal(createTextClip().shadow, null)
+    assert.deepEqual(styled.outline, { color: '#ff0000', width: 0.08 })
+    assert.deepEqual(styled.shadow, { color: '#00ff00', blur: 0.1, x: -0.2, y: 0.3 })
+    assert.equal(invalid.outline.width, 0.04)
+    assert.equal(invalid.shadow.blur, 0.1)
+    assert.equal(invalid.shadow.x, 0)
+    assert.equal(invalid.shadow.y, 0.2)
+    assert.equal(problems.filter(p => /outline.width|shadow.blur|shadow.x/.test(p.message)).length, 3)
+    const again = normalizeProject(JSON.parse(JSON.stringify(project))).project.sequences.main.tracks[0].clips[1]
+    assert.deepEqual(again.outline, styled.outline)
+    assert.deepEqual(again.shadow, styled.shadow)
+})

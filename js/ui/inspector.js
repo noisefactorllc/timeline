@@ -10,7 +10,7 @@
  */
 
 import { dslTokenizer } from 'handfish'
-import { findClip, findTransition, BLEND_MODES, FIT_MODES, MOTION_PRESETS, TEXT_ALIGN } from '../model/project.js'
+import { findClip, findTransition, BLEND_MODES, FIT_MODES, MOTION_PRESETS, TEXT_ALIGN, TEXT_DEFAULTS, TEXT_OUTLINE_DEFAULTS, TEXT_SHADOW_DEFAULTS } from '../model/project.js'
 import { EASE_NAMES, EASE_DIRECTIONS } from '../model/ease.js'
 import { keyValue, keyAt, setKey, removeKey, keyTimes, DUCK_DEFAULTS, DEFAULT_KEY_EASE, gainToDb, dbToGain } from '../model/automation.js'
 import { loadFontCatalog, fontCatalog } from '../render/fonts.js'
@@ -600,6 +600,15 @@ export class InspectorView {
         words.addEventListener('input', () => this._editClip(id, 'Edit text', c => { c.text = words.value }, `text:${id}`))
         this.fields.push({ input: words, refresh: showWords })
         const hasBackground = () => !!findClip(this.store.seq, id)?.clip.background
+        const defaults = { outline: TEXT_OUTLINE_DEFAULTS, shadow: TEXT_SHADOW_DEFAULTS }
+        const effect = (name, key) => () => findClip(this.store.seq, id)?.clip[name]?.[key] ?? defaults[name][key]
+        const editEffect = (name, key, value) => this._editClip(id, `Change text ${name}`, c => {
+            c[name] = { ...defaults[name], ...(c[name] || {}), [key]: value }
+        })
+        const effectPercent = (label, name, key, min = 0, max = 200) => this._numberField(label, () => effect(name, key)() * 100,
+            v => editEffect(name, key, v / 100), { step: 1, min, max, digits: 1 })
+        const backgroundPercent = (label, key) => this._numberField(label, () => (findClip(this.store.seq, id)?.clip[key] ?? TEXT_DEFAULTS[key]) * 100,
+            v => this._editClip(id, 'Change text background', c => { c[key] = v / 100 }), { step: 1, min: 0, max: 1000, digits: 1 })
         body.append(
             this._section('Text', words),
             this._section('Style', this._grid(
@@ -614,9 +623,28 @@ export class InspectorView {
                 this._numberField('Line height', get('lineHeight'), v => this._editClip(id, 'Change line height', c => { c.lineHeight = Math.max(0.1, v) }), { step: 0.05, min: 0.1, digits: 2 }),
                 this._numberField('Letter spacing', get('letterSpacing'), v => this._editClip(id, 'Change letter spacing', c => { c.letterSpacing = v }), { step: 0.01, digits: 2 }),
                 this._numberField('Wrap width %', () => get('maxWidth')() * 100, v => this._editClip(id, 'Change wrap width', c => { c.maxWidth = Math.max(1, v) / 100 }), { step: 1, min: 1, digits: 0 }),
+            )),
+            this._section('Text background', this._grid(
                 this._checkField('Background', hasBackground, v => this._editClip(id, 'Change background', c => { c.background = v ? '#000000' : null })),
                 this._colorField('Background colour', () => findClip(this.store.seq, id)?.clip.background || '#000000',
                     v => this._editClip(id, 'Change background', c => { c.background = v }, `background:${id}`)),
+                backgroundPercent('Horizontal padding %', 'backgroundPaddingX'),
+                backgroundPercent('Vertical padding %', 'backgroundPaddingY'),
+                backgroundPercent('Corner radius %', 'backgroundRadius'),
+            )),
+            this._section('Text outline', this._grid(
+                this._checkField('Outline', () => !!findClip(this.store.seq, id)?.clip.outline,
+                    v => this._editClip(id, 'Toggle text outline', c => { c.outline = v ? { ...TEXT_OUTLINE_DEFAULTS } : null })),
+                this._colorField('Outline colour', effect('outline', 'color'), v => editEffect('outline', 'color', v)),
+                effectPercent('Outline width %', 'outline', 'width'),
+            )),
+            this._section('Text shadow', this._grid(
+                this._checkField('Shadow', () => !!findClip(this.store.seq, id)?.clip.shadow,
+                    v => this._editClip(id, 'Toggle text shadow', c => { c.shadow = v ? { ...TEXT_SHADOW_DEFAULTS } : null })),
+                this._colorField('Shadow colour', effect('shadow', 'color'), v => editEffect('shadow', 'color', v)),
+                effectPercent('Shadow blur %', 'shadow', 'blur'),
+                effectPercent('Shadow X %', 'shadow', 'x', -1000, 1000),
+                effectPercent('Shadow Y %', 'shadow', 'y', -1000, 1000),
             )),
             ...this._graphicSections(id),
         )
