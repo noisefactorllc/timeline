@@ -116,6 +116,21 @@ test('a post chain named by preset runs that preset', async () => {
     assert.match(normalizeProject(raw).problems[0].message, /not one of clean, cinema/)
 })
 
+test('effects are kept by folder path or inline, and bad ones are reported', () => {
+    const { project, problems } = normalizeProject(minimal({
+        effects: {
+            flipTone: { path: 'effects/flipTone' },
+            inline: { definition: { passes: [] }, shaders: { p: { glsl: 'x' } } },
+            '2bad': { path: 'effects/x' },
+            escape: { path: '../outside' },
+            empty: {},
+        },
+    }))
+    assert.deepEqual(Object.keys(project.effects), ['flipTone', 'inline'])
+    assert.deepEqual(problems.map(p => p.where), ['effect "2bad"', 'effect "escape"', 'effect "empty"'])
+    assert.equal(normalizeProject(minimal({ effects: { '': 1 } })).project.effects, undefined)
+})
+
 test('files Timeline cannot open are refused with a reason', () => {
     assert.throws(() => normalizeProject([]), /JSON object/)
     assert.throws(() => normalizeProject({ schema: 99, sequences: { a: {} } }), /schema 99/)

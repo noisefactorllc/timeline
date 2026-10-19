@@ -40,6 +40,16 @@
       "additionalProperties": {
         "$ref": "#/$defs/sequence"
       }
+    },
+    "effects": {
+      "type": "object",
+      "description": "Custom effects: Noisemaker portable effects, keyed by the name programs call them by. A program reaches one with user on its search line (search synth, filter, user) and then .name(). Definitions are data; no code from a project runs.",
+      "propertyNames": {
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/effect"
+      }
     }
   },
   "$defs": {
@@ -707,6 +717,35 @@
       "type": "array",
       "items": {
         "$ref": "#/$defs/key"
+      }
+    },
+    "effect": {
+      "type": "object",
+      "description": "A folder path holding definition.json, glsl/<program>.glsl and optionally wgsl/<program>.wgsl, or the same inline.",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Relative to the project folder, such as effects/flipTone."
+        },
+        "definition": {
+          "type": "object",
+          "description": "A portable effect definition: globals (its parameters) and passes, each naming a shader program with its inputs and outputs. Like Noisemaker's own effects, a filter's pass reads inputTex and writes outputTex."
+        },
+        "shaders": {
+          "type": "object",
+          "description": "Shader source per program: { program: { glsl, wgsl } }.",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "glsl": {
+                "type": "string"
+              },
+              "wgsl": {
+                "type": "string"
+              }
+            }
+          }
+        }
       }
     }
   }

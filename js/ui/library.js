@@ -281,7 +281,16 @@ export class LibraryView {
                 onActivate: () => (m.kind === 'audio' ? this.actions.addPayloadAtPlayhead(payload) : this.actions.placeVisualMedia(m)),
             }))
         }
-        if (!media.length) rows.append(el('p', 'tl-empty', { text: 'Import audio, images or video, or drop files anywhere on the window.' }))
+        for (const func of Object.keys(project.effects || {})) {
+            rows.append(this._row({
+                title: func,
+                sub: 'effect  search user',
+                swatch: 'var(--hf-text-dim)',
+                iconName: 'auto_awesome',
+                onActivate: () => this.actions.status(`In a program, add user to its search line, then call .${func}()`),
+            }))
+        }
+        if (!media.length && !project.effects) rows.append(el('p', 'tl-empty', { text: 'Import audio, images, video, captions (WebVTT, SRT) or Noisedeck effects, or drop files anywhere on the window.' }))
         const where = this.store.source?.kind === 'folder' ? `copied into ${this.store.source.name}` : 'kept in this browser'
         this.body.append(
             buttons,

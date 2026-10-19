@@ -39,7 +39,7 @@ const MODULES = [
     './render/thumbnails.js', './ui/timeline.js', './ui/monitor.js', './ui/inspector.js', './ui/library.js',
     './ui/exportDialog.js', './ui/dialogs.js', './data/demoProject.js', './data/presets.js', './model/project.js',
     './model/edit.js', './model/time.js', './storage/db.js', './storage/projectFile.js', './export/exporter.js',
-    './storage/folder.js', './render/graphics.js', './model/normalize.js',
+    './storage/folder.js', './render/graphics.js', './model/normalize.js', './model/captions.js', './render/effects.js',
 ]
 let modulesLoaded = 0
 const [
@@ -49,7 +49,8 @@ const [
     model, edits, { frameAt, beatSeconds, barSeconds, clamp },
     { loadProject, listProjects, readPrefs, writePrefs, saveProject, saveFolderHandle, loadFolderHandle },
     { projectToFile, projectFromFile, PROJECT_EXTENSION }, { exportSequence }, { FolderSource, UrlSource },
-    { GraphicsRenderer }, { mediaKindOf },
+    { GraphicsRenderer }, { mediaKindOf }, { parseCaptions, captionClips, isCaptionFile },
+    { registerProjectEffects, readEffectZip, zipHoldsEffect, inlineEffects },
 ] = await Promise.all(MODULES.map(path => import(path).then(module => {
     modulesLoaded++
     boot.progress('editor', modulesLoaded / MODULES.length, `${modulesLoaded} of ${MODULES.length} modules`)
@@ -489,7 +490,7 @@ const actions = {
     importMedia() {
         const input = document.createElement('input')
         input.type = 'file'
-        input.accept = 'audio/*,image/*,video/*'
+        input.accept = 'audio/*,image/*,video/*,.vtt,.srt,.json,.zip'
         input.multiple = true
         input.addEventListener('change', () => actions.handleFiles([...input.files]))
         input.click()
@@ -533,15 +534,94 @@ const actions = {
         actions.status(extended ? `${media.name} is on the timeline; the sequence now runs to its end` : `${media.name} is on the timeline`)
     },
 
+    /**
+     * Captions from a WebVTT, SRT or word-timing file, as text clips on a
+     * Captions track. Their times count from the start of the selected audio
+     * clip's file (the narration they were made from), or from the playhead.
+     */
+    async importCaptions(file) {
+        const text = await file.text()
+        let cues
+        try {
+            cues = parseCaptions(text, file.name)
+        } catch (err) {
+            if (/"sequences"\s*:/.test(text)) actions.status(`${file.name} is a project; open its folder with File, Open folder`)
+            else actions.status(`${file.name} cannot be used as captions: ${err?.message || 'unreadable'}`)
+            return
+        }
+        const seq = store.seq
+        const narration = [...store.selection.clips].map(id => model.findClip(seq, id)).find(f => f?.kind === 'audio')
+        const origin = narration ? narration.clip.start - narration.clip.offset : store.playhead
+        const clips = captionClips(cues, origin)
+        const first = Math.min(...clips.map(c => c.start))
+        const end = Math.max(...clips.map(c => c.start + c.duration))
+        let trackName = 'Captions'
+        store.edit('Import captions', s => {
+            if (end > s.duration) s.duration = Math.ceil(end * s.fps) / s.fps
+            let track = s.tracks.find(t => t.name === 'Captions' && !t.locked && !t.clips.some(c => c.start < end && c.start + c.duration > first))
+            if (!track) {
+                track = edits.addTrack(s, 'visual')
+                track.name = s.tracks.some(t => t !== track && t.name === 'Captions') ? `Captions ${s.tracks.length}` : 'Captions'
+            }
+            trackName = track.name
+            for (const clip of clips) edits.insertClip(track, clip)
+        })
+        actions.status(`${clips.length} ${clips.length === 1 ? 'caption' : 'captions'} from ${file.name} are on the ${trackName} track${narration ? `, timed to ${narration.clip.name}` : ''}`)
+    },
+
+    /** Add a portable effect from a Noisedeck effect zip to the project. */
+    async importEffect(bytes, filename) {
+        let effect
+        try {
+            effect = readEffectZip(bytes, filename)
+        } catch (err) {
+            actions.status(err?.message || `${filename} is not an effect`)
+            return
+        }
+        const { func, definition, shaders } = effect
+        if (store.project.effects?.[func]) {
+            actions.status(`This project already has an effect named ${func}`)
+            return
+        }
+        let entry = { definition, shaders }
+        try {
+            if (store.source?.writable) {
+                const dir = `effects/${func}`
+                await store.source.writeText(`${dir}/definition.json`, `${JSON.stringify(definition, null, 2)}\n`)
+                for (const [program, languages] of Object.entries(shaders)) {
+                    for (const [language, text] of Object.entries(languages)) await store.source.writeText(`${dir}/${language}/${program}.${language}`, text)
+                }
+                entry = { path: dir }
+            }
+            const problems = await registerProjectEffects({ effects: { [func]: entry } }, store.source)
+            const error = problems.find(p => p.level === 'error')
+            if (error) {
+                actions.status(`${filename} cannot be used: ${error.message}`)
+                return
+            }
+        } catch (err) {
+            actions.status(`${filename} cannot be used: ${err?.message || err}`)
+            return
+        }
+        store.edit('Add effect', (s, p) => { p.effects = { ...(p.effects || {}), [func]: entry } })
+        actions.status(`Added the effect ${func}. A program uses it with search user, then .${func}()`)
+    },
+
     async handleFiles(files) {
         for (const file of files) {
-            if (file.name.endsWith(`.${PROJECT_EXTENSION}`) || file.type === 'application/zip') {
-                await actions.openProjectFromFile(file)
+            if (file.name.endsWith(`.${PROJECT_EXTENSION}`) || file.type === 'application/zip' || /\.zip$/i.test(file.name)) {
+                const bytes = await file.arrayBuffer()
+                if (zipHoldsEffect(bytes)) await actions.importEffect(bytes, file.name)
+                else await actions.openProjectFromFile(file)
                 continue
             }
             const kind = mediaKindOf(file.type, file.name)
+            if (!kind && isCaptionFile(file.name)) {
+                await actions.importCaptions(file)
+                continue
+            }
             if (!kind) {
-                actions.status(`${file.name} is not an audio, image or video file`)
+                actions.status(`${file.name} is not an audio, image, video or caption file`)
                 continue
             }
             try {
@@ -584,6 +664,7 @@ const actions = {
         actions.pause()
         await store.saveNow()
         setMediaSource(source)
+        problems = [...problems, ...(await registerProjectEffects(project, source))]
         store.openProject(project, { source, problems })
         if (!source) {
             writePrefs({ lastFolder: false })
@@ -667,7 +748,7 @@ const actions = {
 
     async saveProjectFile() {
         await store.saveNow()
-        const file = await projectToFile(store.project, { source: store.source })
+        const file = await projectToFile(await inlineEffects(store.project, store.source), { source: store.source })
         const url = URL.createObjectURL(file)
         const a = document.createElement('a')
         a.href = url
@@ -834,7 +915,7 @@ menu.config = {
                     { id: 'openFile', label: 'Open project file', onSelect: () => actions.openProjectFile() },
                     { id: 'saveFile', label: 'Save project file', shortcut: mod('S'), onSelect: () => actions.saveProjectFile() },
                     { type: 'separator' },
-                    { id: 'importMedia', label: 'Import audio, images or video', onSelect: () => actions.importMedia() },
+                    { id: 'importMedia', label: 'Import media, captions or effects', onSelect: () => actions.importMedia() },
                     { id: 'exportVideo', label: 'Export video', shortcut: mod('E'), onSelect: () => actions.exportVideo() },
                     { id: 'exportAudio', label: 'Export audio', onSelect: () => actions.exportAudio() },
                 ],
@@ -1103,6 +1184,7 @@ function watchFolder() {
         project: () => store.project,
         onProject: async ({ project, problems }) => {
             if (store.source !== source) return
+            problems = [...problems, ...(await registerProjectEffects(project, source))]
             store.replaceProject(project, { problems })
             actions.status(problemSummary('The project changed on disk; Undo goes back', problems))
         },
@@ -1269,6 +1351,7 @@ if (!project) {
     try { await saveProject(project) } catch { /* storage unavailable; the project still works */ }
 }
 setMediaSource(opened.source || null)
+opened.problems = [...(opened.problems || []), ...(await registerProjectEffects(project, opened.source))]
 store.openProject(project, opened)
 watchFolder()
 boot.done('project', project.name)

@@ -89,6 +89,32 @@ export function normalizeProject(raw, { name: fallbackName = 'Untitled project' 
         media[id] = record
     }
 
+    // Custom effects: inline { definition, shaders } or a folder path holding them.
+    const effects = {}
+    for (const [func, e] of Object.entries(isObject(raw.effects) ? raw.effects : {})) {
+        const where = `effect "${func}"`
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(func)) {
+            report('error', where, 'its name must be a DSL identifier (letters, digits and _, not starting with a digit)')
+            continue
+        }
+        if (!isObject(e)) {
+            report('error', where, 'must be an object with a "path" or a "definition"')
+            continue
+        }
+        if (e.path !== undefined) {
+            const path = safeMediaPath(e.path)
+            if (!path) {
+                report('error', where, `path "${e.path}" must be relative to the project folder, without ".."`)
+                continue
+            }
+            effects[func] = { ...e, path }
+        } else if (isObject(e.definition)) {
+            effects[func] = { ...e, shaders: isObject(e.shaders) ? e.shaders : {} }
+        } else {
+            report('error', where, 'needs a "path" to a folder with definition.json and its shaders, or an inline "definition" with "shaders"')
+        }
+    }
+
     const sequences = {}
     for (const [seqId, s] of Object.entries(raw.sequences)) {
         if (!isObject(s)) {
@@ -115,6 +141,7 @@ export function normalizeProject(raw, { name: fallbackName = 'Untitled project' 
         createdAt: isNumber(raw.createdAt) ? raw.createdAt : now,
         updatedAt: isNumber(raw.updatedAt) ? raw.updatedAt : now,
         media,
+        effects: Object.keys(effects).length ? effects : undefined,
         sequences,
         sequenceOrder: order,
         mainSequenceId,

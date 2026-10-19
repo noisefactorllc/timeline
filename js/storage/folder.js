@@ -119,6 +119,17 @@ export class FolderSource {
         return true
     }
 
+    /** Write a text file at a path in the folder, making its directories. */
+    async writeText(path, text) {
+        const safe = safeMediaPath(path)
+        if (!safe) throw new Error(`${path} is not a path inside the project folder`)
+        const handle = await this._handle(safe, { create: true })
+        const writable = await handle.createWritable()
+        await writable.write(text)
+        await writable.close()
+        this.revs.set(safe, rev(await handle.getFile()))
+    }
+
     /** Copy an imported file into the folder's media/ directory; returns its path. */
     async importFile(file) {
         const base = file.name.replace(/[^\p{L}\p{N}._ -]+/gu, '_').replace(/^\.+/, '') || 'media'

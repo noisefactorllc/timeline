@@ -69,3 +69,35 @@ test('the command line checks a project folder and renders frames of it', async 
         rmSync(dir, { recursive: true, force: true })
     }
 })
+
+test('the command line runs a project with a custom effect kept as files in its folder', async ({ baseURL }) => {
+    const dir = mkdtempSync(join(tmpdir(), 'timeline-cli-effect-'))
+    try {
+        mkdirSync(join(dir, 'effects', 'flipTone', 'glsl'), { recursive: true })
+        writeFileSync(join(dir, 'effects', 'flipTone', 'definition.json'), JSON.stringify({
+            name: 'Flip tone',
+            passes: [{ name: 'render', program: 'flip', inputs: { inputTex: 'inputTex' }, outputs: { fragColor: 'outputTex' } }],
+        }))
+        copyFileSync('tests/fixtures/flip-tone.glsl', join(dir, 'effects', 'flipTone', 'glsl', 'flip.glsl'))
+        const project = {
+            effects: { flipTone: { path: 'effects/flipTone' }, broken: { path: 'effects/broken' } },
+            sequences: { main: { duration: 2, post: { enabled: false }, tracks: [{ clips: [
+                { start: 0, duration: 2, dsl: 'search synth, filter, user\nnoise()\n  .flipTone()\n  .write(o0)\nrender(o0)' },
+            ] }] } },
+        }
+        writeFileSync(join(dir, 'project.json'), JSON.stringify(project))
+        const url = `${baseURL}/`
+        const failed = await run(['check', dir, '--url', url, '--json'])
+        const report = JSON.parse(failed.stdout)
+        expect(report.errors.map(e => `${e.where}: ${e.message}`)).toEqual(['effect "broken": effects/broken/definition.json could not be read'])
+
+        delete project.effects.broken
+        writeFileSync(join(dir, 'project.json'), JSON.stringify(project))
+        const passed = await run(['check', dir, '--url', url])
+        expect(passed.status, passed.stdout + passed.stderr).toBe(0)
+        const shot = await run(['snapshot', dir, '--url', url, '--at', '1', '--scale', '0.25', '--json'])
+        expect(shot.status, shot.stderr).toBe(0)
+    } finally {
+        rmSync(dir, { recursive: true, force: true })
+    }
+})
