@@ -572,6 +572,7 @@ button {
     inset: 0;
     display: grid;
     grid-template-rows: minmax(0, 1fr) auto;
+    container: monitor / inline-size;
 }
 
 .tl-monitor-frame {
@@ -660,12 +661,90 @@ button {
     }
 }
 
+/* Under the frame: the clock, the transport centered on the frame, and the
+   meters and view controls. A narrow monitor puts the transport on its own
+   row above the other two. */
 .tl-monitor-bar {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(min-content, 1fr) auto minmax(0, 1fr);
+    grid-template-areas: "clock transport tools";
     align-items: center;
     gap: 14px;
     padding: 6px 14px 10px;
     min-width: 0;
+}
+
+.tl-clock {
+    grid-area: clock;
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.tl-clock-time {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    white-space: nowrap;
+}
+
+.tl-timecode-total {
+    font-family: var(--tl-font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 13px;
+    color: var(--hf-text-dim);
+}
+
+.tl-clock .tl-timecode-sub {
+    display: flex;
+    gap: 12px;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.tl-transport {
+    grid-area: transport;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.tl-monitor-tools {
+    grid-area: tools;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 14px;
+    min-width: 0;
+}
+
+@container monitor (max-width: 760px) {
+    .tl-clock .tl-timecode-sub {
+        display: none;
+    }
+
+    .tl-monitor-bar {
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas:
+            "transport transport"
+            "clock tools";
+        row-gap: 4px;
+    }
+
+    .tl-transport {
+        justify-self: center;
+    }
+}
+
+@container monitor (max-width: 520px) {
+    .tl-monitor-bar {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas:
+            "transport"
+            "clock"
+            "tools";
+        justify-items: center;
+    }
 }
 
 .tl-timecode {
@@ -688,13 +767,6 @@ button {
 
 .tl-spacer {
     flex: 1;
-}
-
-.tl-monitor-bar .tl-timecode-sub {
-    display: flex;
-    gap: 14px;
-    min-width: 0;
-    overflow: hidden;
 }
 
 /* audio meters: what audio() sees right now */
@@ -847,11 +919,6 @@ button {
 .tl-zoom {
     width: 110px;
     accent-color: var(--hf-text-normal);
-}
-
-.tl-toolbar .tl-timecode {
-    font-size: 15px;
-    min-width: 11ch;
 }
 
 .tl-body {

@@ -606,11 +606,7 @@ const actions = {
 // --- views -------------------------------------------------------------------
 
 const timeline = new TimelineView(document.getElementById('timeline'), { store, thumbs, pool, actions, audio })
-const monitor = new MonitorView(document.getElementById('monitor'), {
-    store,
-    onScale: scale => actions.setPreviewScale(scale),
-    onFullscreen: () => actions.toggleFullscreen(),
-})
+const monitor = new MonitorView(document.getElementById('monitor'), { store, actions })
 new InspectorView(document.getElementById('inspector'), { store, pool, actions })
 new LibraryView(document.getElementById('library'), { store, thumbs, actions })
 const exportDialog = new ExportDialog({ store, renderer, pool, audio, actions })

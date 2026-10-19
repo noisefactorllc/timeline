@@ -12,6 +12,19 @@ test('the demo opens with its tracks, transitions, markers and post chain', asyn
     expect(errors).toEqual([])
 })
 
+test('the transport sits under the frame and the time shows once, over the length', async ({ page }) => {
+    await boot(page)
+    await expect(page.locator('.tl-timecode')).toHaveCount(1)
+    await expect(page.locator('.tl-monitor .tl-timecode-total')).toHaveText('/ 00:01:00:00')
+    await expect(page.locator('.tl-toolbar [aria-label="Play or pause (Space)"]')).toHaveCount(0)
+    const play = page.locator('.tl-monitor .tl-transport [aria-label="Play or pause (Space)"]')
+    const [canvas, transport] = await Promise.all([page.locator('.tl-monitor-canvas'), play].map(l => l.boundingBox()))
+    expect(transport.y).toBeGreaterThan(canvas.y + canvas.height)
+    expect(Math.abs(transport.x + transport.width / 2 - (canvas.x + canvas.width / 2))).toBeLessThan(20)
+    await page.locator('.tl-transport [aria-label="Go to end (End)"]').click()
+    await expect(page.locator('.tl-monitor .tl-timecode')).toHaveText('00:01:00:00')
+})
+
 test('a frame inside the nested drop renders every layer and both post chains', async ({ page }) => {
     await boot(page)
     await settleAt(page, 31)

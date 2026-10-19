@@ -1,7 +1,8 @@
 /**
- * The program monitor: the rendered frame, the timecode, and meters that
- * show what `audio()` reads right now from the mix and from each audio
- * track, the same values the programs see.
+ * The program monitor: the rendered frame, and under it the playhead time
+ * over the sequence length, the transport, and meters that show what
+ * `audio()` reads right now from the mix and from each audio track, the
+ * same values the programs see.
  */
 
 import { formatTimecode } from '../model/time.js'
@@ -15,7 +16,7 @@ function el(tag, className, text) {
 }
 
 export class MonitorView {
-    constructor(root, { store, onScale, onFullscreen }) {
+    constructor(root, { store, actions }) {
         this.root = root
         this.store = store
         const frame = el('div', 'tl-monitor-frame')
@@ -32,8 +33,39 @@ export class MonitorView {
         frame.append(overlay)
 
         const bar = el('div', 'tl-monitor-bar')
-        this.tc = el('div', 'tl-timecode', '00:00:00:00')
+        const clock = el('div', 'tl-clock')
+        const time = el('div', 'tl-clock-time')
+        this.tc = el('span', 'tl-timecode', '00:00:00:00')
+        this.tc.setAttribute('aria-label', 'Playhead time')
+        this.total = el('span', 'tl-timecode-total')
+        this.total.setAttribute('aria-label', 'Sequence length')
+        time.append(this.tc, this.total)
         this.info = el('div', 'tl-timecode-sub')
+        clock.append(time, this.info)
+
+        const transport = el('div', 'tl-transport')
+        transport.setAttribute('role', 'toolbar')
+        transport.setAttribute('aria-label', 'Transport')
+        const tool = (iconName, label, onClick, className = '') => {
+            const b = el('button', `tl-tool ${className}`)
+            b.type = 'button'
+            b.title = label
+            b.setAttribute('aria-label', label)
+            const i = el('span', 'hf-icon', iconName)
+            i.setAttribute('aria-hidden', 'true')
+            b.append(i)
+            b.addEventListener('click', onClick)
+            transport.append(b)
+            return b
+        }
+        tool('first_page', 'Go to start (Home)', () => actions.seek(0))
+        tool('chevron_left', 'Back one frame (Left)', () => actions.step(-1))
+        this.playBtn = tool('play_arrow', 'Play or pause (Space)', () => actions.togglePlay(), 'is-play')
+        tool('chevron_right', 'Forward one frame (Right)', () => actions.step(1))
+        tool('last_page', 'Go to end (End)', () => actions.seek(store.seq.duration))
+        this.loopBtn = tool('repeat', 'Loop the in/out range', () => actions.toggleLoop())
+
+        const tools = el('div', 'tl-monitor-tools')
         this.meters = el('div', 'tl-meters')
         this.meters.setAttribute('aria-label', 'Audio levels that audio() reads')
         const scale = el('select', 'tl-select')
@@ -44,30 +76,40 @@ export class MonitorView {
             scale.append(o)
         }
         scale.value = String(store.view.previewScale)
-        scale.addEventListener('change', () => onScale(Number(scale.value)))
+        scale.addEventListener('change', () => actions.setPreviewScale(Number(scale.value)))
         this.scaleSelect = scale
         const full = el('button', 'tl-tool')
         full.type = 'button'
         full.title = 'Full screen (F)'
         full.setAttribute('aria-label', 'Full screen')
         full.append(el('span', 'hf-icon', 'fullscreen'))
-        full.addEventListener('click', onFullscreen)
-        bar.append(this.tc, this.info, el('div', 'tl-spacer'), this.meters, scale, full)
+        full.addEventListener('click', () => actions.toggleFullscreen())
+        tools.append(this.meters, scale, full)
+        bar.append(clock, transport, tools)
         root.replaceChildren(frame, bar)
         this.frameEl = frame
         this._meterRows = []
 
         new ResizeObserver(() => this._fit()).observe(frame)
         store.on('playhead', () => this.updateTime())
+        store.on('transport', () => this._updateTransport())
         store.on('project', () => this._sequenceChanged())
         store.on('view', () => { this.scaleSelect.value = String(store.view.previewScale) })
         this._sequenceChanged()
+        this._updateTransport()
+    }
+
+    _updateTransport() {
+        const icon = this.playBtn.querySelector('.hf-icon')
+        icon.textContent = this.store.playing ? 'pause' : 'play_arrow'
+        this.loopBtn.setAttribute('aria-pressed', String(this.store.loopPlayback))
     }
 
     _sequenceChanged() {
         const seq = this.store.seq
         if (!seq) return
         this.info.replaceChildren(...[seq.name, `${seq.width}×${seq.height}`, `${seq.fps} fps`, `${seq.bpm} bpm`].map(t => el('span', '', t)))
+        this.total.textContent = `/ ${formatTimecode(seq.duration, seq.fps)}`
         this._buildMeters(seq)
         this._fit()
         this.updateTime()

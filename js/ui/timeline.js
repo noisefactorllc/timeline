@@ -1,5 +1,5 @@
 /**
- * The timeline panel: transport toolbar, ruler, markers, track lanes with
+ * The timeline panel: editing toolbar, ruler, markers, track lanes with
  * clips, transitions and the post lane, and the playhead.
  *
  * Video tracks stack upper over lower, so V1 is drawn at the bottom of the
@@ -75,7 +75,6 @@ export class TimelineView {
         store.on('selection', () => this.render())
         store.on('view', () => this.render())
         store.on('playhead', () => this.updatePlayhead())
-        store.on('transport', () => this._updateTransport())
         thumbs.onReady(() => this._scheduleStrips())
         pool.compiledListeners.add((entry, result) => {
             if (!result.success || entry.hadError) this.render()
@@ -93,7 +92,7 @@ export class TimelineView {
         const root = this.root
         root.replaceChildren()
 
-        const toolbar = el('div', 'tl-toolbar', { role: 'toolbar', 'aria-label': 'Transport and tools' })
+        const toolbar = el('div', 'tl-toolbar', { role: 'toolbar', 'aria-label': 'Editing tools' })
         const tool = (iconName, label, onClick, extra = {}) => {
             const b = el('button', `tl-tool ${extra.className || ''}`, { type: 'button', 'aria-label': label, 'data-title': label, title: label })
             b.append(icon(iconName))
@@ -102,17 +101,6 @@ export class TimelineView {
             toolbar.append(b)
             return b
         }
-        tool('first_page', 'Go to start (Home)', () => this.actions.seek(0))
-        tool('chevron_left', 'Back one frame (Left)', () => this.actions.step(-1))
-        this.playBtn = tool('play_arrow', 'Play or pause (Space)', () => this.actions.togglePlay(), { className: 'is-play' })
-        tool('chevron_right', 'Forward one frame (Right)', () => this.actions.step(1))
-        tool('last_page', 'Go to end (End)', () => this.actions.seek(this.store.seq.duration))
-        this.loopBtn = tool('repeat', 'Loop the in/out range', () => this.actions.toggleLoop(), { pressed: false })
-        toolbar.append(el('div', 'tl-toolbar-sep'))
-        this.tcEl = el('div', 'tl-timecode', { 'aria-label': 'Playhead time' })
-        this.durEl = el('div', 'tl-timecode-sub')
-        toolbar.append(this.tcEl, this.durEl)
-        toolbar.append(el('div', 'tl-toolbar-sep'))
         tool('content_cut', 'Cut at playhead (Cmd+K)', () => this.actions.cutAtPlayhead())
         tool('join', 'Add transition at the nearest cut (Cmd+D)', () => this.actions.addTransitionAtPlayhead())
         tool('bookmark_add', 'Add marker (M)', () => this.actions.addMarker())
@@ -213,9 +201,7 @@ export class TimelineView {
         this._sizeContent()
         this.snapBtn.setAttribute('aria-pressed', String(this.store.view.snapping))
         this.gridBtn.setAttribute('aria-pressed', String(this.store.view.beatGrid))
-        this.loopBtn.setAttribute('aria-pressed', String(this.store.loopPlayback))
         this.zoomInput.value = String(Math.round(1000 * Math.log(this.pps / MIN_PPS) / Math.log(MAX_PPS / MIN_PPS)))
-        this.durEl.textContent = `/ ${formatTimecode(seq.duration, seq.fps)}`
         const bar = barSeconds(seq.bpm, seq.beatsPerBar) * this.pps
         const beat = beatSeconds(seq.bpm) * this.pps
         this.root.style.setProperty('--tl-bar-px', `${bar}px`)
@@ -532,18 +518,12 @@ export class TimelineView {
         if (!seq) return
         const t = this.store.playhead
         this.playheadEl.style.left = `${this.timeToX(t)}px`
-        this.tcEl.textContent = formatTimecode(t, seq.fps)
         if (this.store.playing) {
             const x = this.timeToX(t)
             const viewW = this.scroll.clientWidth
             const left = this.scroll.scrollLeft
             if (x > left + viewW * 0.85 || x < left) this.scroll.scrollLeft = Math.max(0, x - viewW * 0.15)
         }
-    }
-
-    _updateTransport() {
-        this.playBtn.replaceChildren(icon(this.store.playing ? 'pause' : 'play_arrow'))
-        this.loopBtn.setAttribute('aria-pressed', String(this.store.loopPlayback))
     }
 
     // --- filmstrips and waveforms ---------------------------------------------
