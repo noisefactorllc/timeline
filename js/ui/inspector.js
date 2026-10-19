@@ -1,8 +1,8 @@
 /**
  * The inspector edits whatever is selected: a program clip's DSL, timing,
- * loop and compositing; a nested sequence clip; an audio clip; a
- * transition's DSL; the post chain; a marker; or, with nothing selected,
- * the sequence itself.
+ * loop and compositing; a nested sequence clip; a text, image or video
+ * clip's look, placement and motion; an audio clip; a transition's DSL;
+ * the post chain; a marker; or, with nothing selected, the sequence itself.
  *
  * DSL edits apply live, debounced, as undoable edits that coalesce while
  * typing. The monitor shows the result as soon as the program compiles, and
@@ -10,7 +10,9 @@
  */
 
 import { dslTokenizer } from 'handfish'
-import { findClip, findTransition, BLEND_MODES } from '../model/project.js'
+import { findClip, findTransition, BLEND_MODES, FIT_MODES, MOTION_PRESETS, TEXT_ALIGN } from '../model/project.js'
+import { EASE_NAMES, EASE_DIRECTIONS } from '../model/ease.js'
+import { loadFontCatalog, fontCatalog } from '../render/fonts.js'
 import { formatTimecode, parseTime, barSeconds, beatSeconds } from '../model/time.js'
 import { transitionSpan, maxTransitionDuration } from '../model/evaluate.js'
 import { TRANSITIONS, POST_PRESETS, transitionPreset, postPreset, audioSnippets } from '../data/presets.js'
@@ -50,6 +52,7 @@ export const SHORTCUTS = [
     ['I / O', 'Set in and out'],
     ['Alt X', 'Clear in and out'],
     ['M', 'Add marker'],
+    ['T', 'Add text'],
     ['Cmd K', 'Cut at playhead'],
     ['Cmd D', 'Add transition at nearest cut'],
     ['Cmd C / V', 'Copy and paste at playhead'],
@@ -346,6 +349,8 @@ export class InspectorView {
             case 'program': head = this._buildProgram(target, body); break
             case 'sequence': head = target.clip ? this._buildSequenceClip(target, body) : this._buildSequence(seq, body); break
             case 'audio': head = this._buildAudio(target, body); break
+            case 'text': head = this._buildText(target, body); break
+            case 'image': case 'video': head = this._buildMedia(target, body); break
             case 'transition': head = this._buildTransition(target, body); break
             case 'post': head = this._buildPost(seq, body); break
             case 'marker': head = this._buildMarker(target, body); break
@@ -401,6 +406,139 @@ export class InspectorView {
                 this._selectField('Blend', BLEND_MODES.map(m => [m, m]), () => findClip(this.store.seq, id)?.clip.blend || 'normal',
                     v => this._editClip(id, 'Change blend mode', c => { c.blend = v })),
             )),
+        )
+        return head
+    }
+
+    // --- graphics: text, image and video -----------------------------------------
+
+    _colorField(label, get, set) {
+        const input = el('input', '', { type: 'color' })
+        const show = () => { input.value = /^#[0-9a-f]{6}$/i.test(get() || '') ? get() : '#000000' }
+        show()
+        input.addEventListener('input', () => set(input.value))
+        this.fields.push({ input, refresh: show })
+        return this._field(label, input)
+    }
+
+    _fontField(id) {
+        const select = el('select')
+        const current = () => findClip(this.store.seq, id)?.clip.font || 'Inter'
+        const fill = () => {
+            const fonts = fontCatalog() || []
+            const groups = new Map()
+            for (const f of fonts) {
+                if (!groups.has(f.category)) groups.set(f.category, [])
+                groups.get(f.category).push(f.name)
+            }
+            select.replaceChildren()
+            if (!fonts.some(f => f.name === current())) select.append(el('option', '', { value: current(), text: current() }))
+            for (const [category, names] of groups) {
+                const group = el('optgroup', '', { label: category })
+                for (const name of names) group.append(el('option', '', { value: name, text: name }))
+                select.append(group)
+            }
+            select.value = current()
+        }
+        fill()
+        if (!fontCatalog()) loadFontCatalog().then(fill).catch(() => {})
+        select.addEventListener('change', () => this._editClip(id, 'Change font', c => { c.font = select.value }))
+        this.fields.push({ input: select, refresh: () => { select.value = current() } })
+        return this._field('Font', select)
+    }
+
+    _motionFields(id, side) {
+        const get = () => findClip(this.store.seq, id)?.clip[side] || {}
+        const edit = (label, fn) => this._editClip(id, label, c => { c[side] = { ...c[side] }; fn(c[side]) })
+        const eases = [['none', 'none'], ...EASE_NAMES.filter(n => n !== 'none').flatMap(n => EASE_DIRECTIONS.map(d => [`${n}.${d}`, `${n}.${d}`]))]
+        const title = side === 'enter' ? 'Enter' : 'Exit'
+        return [
+            this._selectField(title, MOTION_PRESETS.map(m => [m, m]), () => get().preset || 'none', v => edit(`Change ${side} motion`, m => { m.preset = v })),
+            this._numberField(`${title} seconds`, () => get().duration ?? 0.5, v => edit(`Change ${side} motion`, m => { m.duration = Math.max(0, v) }), { step: 0.05, min: 0, digits: 2 }),
+            this._selectField(`${title} ease`, eases, () => get().ease || 'power1.out', v => edit(`Change ${side} motion`, m => { m.ease = v })),
+        ]
+    }
+
+    /** Placement, motion, timing and compositing, shared by text, image and video clips. */
+    _graphicSections(id) {
+        const get = key => () => findClip(this.store.seq, id)?.clip[key] ?? 0
+        const pct = (label, key, opts = {}) => this._numberField(label, () => get(key)() * 100,
+            v => this._editClip(id, `Change ${label.toLowerCase()}`, c => { c[key] = v / 100 }), { step: 1, digits: 1, ...opts })
+        return [
+            this._section('Position', this._grid(
+                pct('X %', 'x'),
+                pct('Y %', 'y'),
+                pct('Scale %', 'scale', { min: 0 }),
+                this._numberField('Rotation °', get('rotation'), v => this._editClip(id, 'Change rotation', c => { c.rotation = v }), { step: 1, digits: 1 }),
+            )),
+            this._section('Motion', this._grid(...this._motionFields(id, 'enter'), ...this._motionFields(id, 'exit'))),
+            this._section('Timing', this._grid(
+                this._timeField('Start', get('start'), t => this._editClip(id, 'Move clip', c => { c.start = Math.max(0, t) })),
+                this._timeField('Duration', get('duration'), t => this.actions.setClipDuration(id, t)),
+            )),
+            this._section('Composite', this._grid(
+                this._rangeField('Opacity', () => Math.round((findClip(this.store.seq, id)?.clip.opacity ?? 1) * 100),
+                    (v, co) => this._editClip(id, 'Change opacity', c => { c.opacity = v / 100 }, co), { coalesce: `opacity:${id}` }),
+                this._selectField('Blend', BLEND_MODES.map(m => [m, m]), () => findClip(this.store.seq, id)?.clip.blend || 'normal',
+                    v => this._editClip(id, 'Change blend mode', c => { c.blend = v })),
+            )),
+        ]
+    }
+
+    _buildText(target, body) {
+        const { clip } = target
+        const id = clip.id
+        const head = this._head('title', clip.name, { editable: name => this._editClip(id, 'Rename clip', c => { c.name = name }) })
+        const get = key => () => findClip(this.store.seq, id)?.clip[key] ?? 0
+        const words = el('textarea', 'tl-textarea', { rows: '3', spellcheck: 'true', 'aria-label': 'Text' })
+        const showWords = () => { words.value = findClip(this.store.seq, id)?.clip.text ?? '' }
+        showWords()
+        words.addEventListener('input', () => this._editClip(id, 'Edit text', c => { c.text = words.value }, `text:${id}`))
+        this.fields.push({ input: words, refresh: showWords })
+        const hasBackground = () => !!findClip(this.store.seq, id)?.clip.background
+        body.append(
+            this._section('Text', words),
+            this._section('Style', this._grid(
+                this._fontField(id),
+                this._selectField('Weight', [100, 200, 300, 400, 500, 600, 700, 800, 900].map(w => [String(w), String(w)]), get('weight'),
+                    v => this._editClip(id, 'Change weight', c => { c.weight = Number(v) })),
+                this._numberField('Size % of height', () => get('size')() * 100, v => this._editClip(id, 'Change text size', c => { c.size = Math.max(0.1, v) / 100 }), { step: 0.5, min: 0.1, digits: 1 }),
+                this._colorField('Colour', () => findClip(this.store.seq, id)?.clip.color, v => this._editClip(id, 'Change colour', c => { c.color = v }, `color:${id}`)),
+                this._selectField('Align', TEXT_ALIGN.map(a => [a, a]), () => findClip(this.store.seq, id)?.clip.align || 'center',
+                    v => this._editClip(id, 'Change alignment', c => { c.align = v })),
+                this._checkField('Italic', () => findClip(this.store.seq, id)?.clip.italic, v => this._editClip(id, 'Change italic', c => { c.italic = v })),
+                this._numberField('Line height', get('lineHeight'), v => this._editClip(id, 'Change line height', c => { c.lineHeight = Math.max(0.1, v) }), { step: 0.05, min: 0.1, digits: 2 }),
+                this._numberField('Letter spacing', get('letterSpacing'), v => this._editClip(id, 'Change letter spacing', c => { c.letterSpacing = v }), { step: 0.01, digits: 2 }),
+                this._numberField('Wrap width %', () => get('maxWidth')() * 100, v => this._editClip(id, 'Change wrap width', c => { c.maxWidth = Math.max(1, v) / 100 }), { step: 1, min: 1, digits: 0 }),
+                this._checkField('Background', hasBackground, v => this._editClip(id, 'Change background', c => { c.background = v ? '#000000' : null })),
+                this._colorField('Background colour', () => findClip(this.store.seq, id)?.clip.background || '#000000',
+                    v => this._editClip(id, 'Change background', c => { c.background = v }, `background:${id}`)),
+            )),
+            ...this._graphicSections(id),
+        )
+        return head
+    }
+
+    _buildMedia(target, body) {
+        const { clip } = target
+        const id = clip.id
+        const media = this.store.project.media[clip.mediaId]
+        const head = this._head(clip.type === 'video' ? 'movie' : 'image', clip.name, { editable: name => this._editClip(id, 'Rename clip', c => { c.name = name }) })
+        const get = key => () => findClip(this.store.seq, id)?.clip[key] ?? 0
+        const about = media ? [media.name, media.width ? `${media.width}×${media.height}` : '', clip.type === 'video' ? formatTimecode(media.duration || 0, this.store.seq.fps) : ''].filter(Boolean).join('  ') : 'The media for this clip is missing'
+        const source = [
+            this._selectField('Fit', FIT_MODES.map(f => [f, f]), () => findClip(this.store.seq, id)?.clip.fit || 'contain', v => this._editClip(id, 'Change fit', c => { c.fit = v })),
+        ]
+        if (clip.type === 'video') {
+            source.push(
+                this._timeField('Source in', get('offset'), t => this._editClip(id, 'Change source in', c => { c.offset = Math.max(0, t) })),
+                this._checkField('Loop', () => findClip(this.store.seq, id)?.clip.loopVideo, v => this._editClip(id, 'Change video loop', c => { c.loopVideo = v })),
+            )
+        }
+        body.append(
+            el('p', 'tl-hint', { text: `${about}. A program clip above this one that reads media() processes it.` }),
+            this._section('Source', this._grid(...source)),
+            ...this._graphicSections(id),
         )
         return head
     }

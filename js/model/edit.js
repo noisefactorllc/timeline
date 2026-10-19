@@ -291,6 +291,25 @@ export function addTrack(seq, kind = 'visual') {
     return track
 }
 
+/**
+ * The track for a clip that should show over everything playing from
+ * `start` to `end`, such as a title or a logo: the first track above the
+ * highest one with a clip in that span, or a new track on top.
+ */
+export function overlayTrack(seq, start, end) {
+    let highest = -1
+    seq.tracks.forEach((track, i) => {
+        if (track.clips.some(c => c.start < end && clipEnd(c) > start)) highest = i
+    })
+    const above = seq.tracks.slice(highest + 1).find(t => !t.locked)
+    return above || addTrack(seq, 'visual')
+}
+
+/** An audio track with nothing playing from `start` to `end`, or a new one. */
+export function freeAudioTrack(seq, start, end) {
+    return seq.audioTracks.find(t => !t.clips.some(c => c.start < end && clipEnd(c) > start)) || addTrack(seq, 'audio')
+}
+
 export function removeTrack(seq, trackId) {
     if (seq.tracks.length > 1) seq.tracks = seq.tracks.filter(t => t.id !== trackId)
     if (seq.audioTracks.some(t => t.id === trackId)) seq.audioTracks = seq.audioTracks.filter(t => t.id !== trackId)

@@ -2,79 +2,213 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://timeline.noisedeck.app/schema/project.schema.json",
   "title": "Timeline project",
-  "description": "project.json in a Timeline project folder. Media files sit in the same folder and are named by relative path. Times are in seconds. Only \"sequences\" is required; everything else has a default. Ids are optional: a track, clip, transition or marker without one gets an id from its place, such as \"main/V1/2\". Give a clip an id when a transition names it.",
+  "description": "project.json in a Timeline project folder. Media files (audio, images, video) sit in the same folder and are named by relative path. Times are in seconds. Only \"sequences\" is required; everything else has a default. Ids are optional: a track, clip, transition or marker without one gets an id from its place, such as \"main/V1/2\". Give a clip an id when a transition names it.",
   "type": "object",
-  "required": ["sequences"],
+  "required": [
+    "sequences"
+  ],
   "properties": {
-    "schema": { "const": 1, "description": "Format version." },
-    "name": { "type": "string", "description": "Defaults to the folder's name." },
-    "mainSequenceId": { "type": "string", "description": "The sequence that opens and exports. Defaults to the first one." },
-    "sequenceOrder": { "type": "array", "items": { "type": "string" } },
+    "schema": {
+      "const": 1,
+      "description": "Format version."
+    },
+    "name": {
+      "type": "string",
+      "description": "Defaults to the folder's name."
+    },
+    "mainSequenceId": {
+      "type": "string",
+      "description": "The sequence that opens and exports. Defaults to the first one."
+    },
+    "sequenceOrder": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "media": {
       "type": "object",
-      "description": "Media files, keyed by the id that audio clips use in \"mediaId\".",
-      "additionalProperties": { "$ref": "#/$defs/media" }
+      "description": "Media files keyed by id. Audio clips name them in \"mediaId\", and so do image and video clips.",
+      "additionalProperties": {
+        "$ref": "#/$defs/media"
+      }
     },
     "sequences": {
       "type": "object",
       "minProperties": 1,
       "description": "Sequences keyed by id. A sequence clip nests one sequence inside another.",
-      "additionalProperties": { "$ref": "#/$defs/sequence" }
+      "additionalProperties": {
+        "$ref": "#/$defs/sequence"
+      }
     }
   },
   "$defs": {
-    "seconds": { "type": "number", "minimum": 0 },
+    "seconds": {
+      "type": "number",
+      "minimum": 0
+    },
     "media": {
       "type": "object",
-      "required": ["path"],
+      "required": [
+        "path"
+      ],
       "properties": {
-        "path": { "type": "string", "description": "Relative to the project folder, such as \"media/song.flac\". No \"..\"." },
-        "kind": { "const": "audio" },
-        "name": { "type": "string", "description": "Defaults to the file name without its extension." },
-        "type": { "type": "string", "description": "MIME type; defaults from the extension (wav, mp3, m4a, aac, ogg, opus, flac, webm)." },
-        "duration": { "$ref": "#/$defs/seconds", "description": "Length of the file, used as the default length of clips that play it." }
+        "path": {
+          "type": "string",
+          "description": "Relative to the project folder, such as \"media/song.flac\". No \"..\"."
+        },
+        "kind": {
+          "enum": [
+            "audio",
+            "image",
+            "video"
+          ],
+          "description": "Defaults from the extension: wav, mp3, m4a, aac, ogg, opus and flac are audio; png, jpg, webp, gif, svg and avif are images; mp4, m4v, mov, webm and mkv are video."
+        },
+        "name": {
+          "type": "string",
+          "description": "Defaults to the file name without its extension."
+        },
+        "type": {
+          "type": "string",
+          "description": "MIME type; defaults from the extension."
+        },
+        "duration": {
+          "$ref": "#/$defs/seconds",
+          "description": "Length of the file, used as the default length of clips that play it."
+        },
+        "width": {
+          "type": "integer",
+          "description": "Pixel width of an image or video."
+        },
+        "height": {
+          "type": "integer",
+          "description": "Pixel height of an image or video."
+        },
+        "hasAudio": {
+          "type": "boolean",
+          "description": "Whether a video has sound an audio clip can play."
+        }
       }
     },
     "sequence": {
       "type": "object",
       "properties": {
-        "name": { "type": "string", "description": "Defaults to the sequence's id." },
-        "width": { "type": "integer", "minimum": 1, "default": 1920 },
-        "height": { "type": "integer", "minimum": 1, "default": 1080 },
-        "fps": { "type": "integer", "minimum": 1, "default": 30 },
-        "duration": { "type": "number", "exclusiveMinimum": 0, "default": 60 },
-        "bpm": { "type": "number", "exclusiveMinimum": 0, "default": 120, "description": "Tempo of the beat grid. A bar lasts 60 / bpm * beatsPerBar seconds." },
-        "beatsPerBar": { "type": "integer", "minimum": 1, "default": 4 },
-        "gridOffset": { "type": "number", "default": 0, "description": "Time of the first beat." },
-        "inPoint": { "type": ["number", "null"], "default": null },
-        "outPoint": { "type": ["number", "null"], "default": null },
-        "audioSensitivity": { "type": "number", "default": 1, "description": "Scales what audio() reads from the mix." },
+        "name": {
+          "type": "string",
+          "description": "Defaults to the sequence's id."
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1920
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1080
+        },
+        "fps": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 30
+        },
+        "duration": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 60
+        },
+        "bpm": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 120,
+          "description": "Tempo of the beat grid. A bar lasts 60 / bpm * beatsPerBar seconds."
+        },
+        "beatsPerBar": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 4
+        },
+        "gridOffset": {
+          "type": "number",
+          "default": 0,
+          "description": "Time of the first beat."
+        },
+        "inPoint": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "default": null
+        },
+        "outPoint": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "default": null
+        },
+        "audioSensitivity": {
+          "type": "number",
+          "default": 1,
+          "description": "Scales what audio() reads from the mix."
+        },
         "tracks": {
           "type": "array",
           "description": "Video tracks, bottom first: tracks[0] is V1 and later tracks draw over it. Defaults to three empty tracks.",
-          "items": { "$ref": "#/$defs/track" }
+          "items": {
+            "$ref": "#/$defs/track"
+          }
         },
         "audioTracks": {
           "type": "array",
           "description": "Audio tracks. In a program, audio(..., channel: N) reads track N alone (channel: 1 is the first); without a channel it reads the mix. Defaults to two empty tracks.",
-          "items": { "$ref": "#/$defs/audioTrack" }
+          "items": {
+            "$ref": "#/$defs/audioTrack"
+          }
         },
         "markers": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["time"],
-            "properties": { "id": { "type": "string" }, "time": { "$ref": "#/$defs/seconds" }, "name": { "type": "string" } }
+            "required": [
+              "time"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "time": {
+                "$ref": "#/$defs/seconds"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
           }
         },
         "post": {
           "type": "object",
           "description": "The post chain: one program that every finished frame passes through. Its media() step reads the frame.",
           "properties": {
-            "enabled": { "type": "boolean", "default": true },
-            "preset": { "type": "string", "default": "cinema", "description": "A post preset: clean, cinema, industrial, vhs, dream, datamosh, print or lofi. Without \"dsl\" the chain runs the preset's program." },
-            "dsl": { "type": "string", "description": "A custom post program; its media() step reads the finished frame." },
-            "loop": { "type": "number", "exclusiveMinimum": 0, "default": 8 }
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "preset": {
+              "type": "string",
+              "default": "cinema",
+              "description": "A post preset: clean, cinema, industrial, vhs, dream, datamosh, print or lofi. Without \"dsl\" the chain runs the preset's program."
+            },
+            "dsl": {
+              "type": "string",
+              "description": "A custom post program; its media() step reads the finished frame."
+            },
+            "loop": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "default": 8
+            }
           }
         }
       }
@@ -82,73 +216,381 @@
     "track": {
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string", "description": "Defaults to V1, V2 and so on." },
-        "hidden": { "type": "boolean", "default": false },
-        "locked": { "type": "boolean", "default": false },
-        "clips": { "type": "array", "items": { "$ref": "#/$defs/visualClip" } },
-        "transitions": { "type": "array", "items": { "$ref": "#/$defs/transition" } }
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "description": "Defaults to V1, V2 and so on."
+        },
+        "hidden": {
+          "type": "boolean",
+          "default": false
+        },
+        "locked": {
+          "type": "boolean",
+          "default": false
+        },
+        "clips": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/visualClip"
+          }
+        },
+        "transitions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/transition"
+          }
+        }
       }
     },
     "visualClip": {
       "type": "object",
-      "required": ["start", "duration"],
+      "required": [
+        "start",
+        "duration"
+      ],
       "properties": {
-        "id": { "type": "string" },
-        "type": { "enum": ["program", "sequence"], "description": "Defaults to \"sequence\" when sequenceId is set, otherwise \"program\"." },
-        "name": { "type": "string" },
-        "start": { "$ref": "#/$defs/seconds" },
-        "duration": { "type": "number", "exclusiveMinimum": 0 },
-        "offset": { "type": "number", "default": 0, "description": "Seconds into the program's (or nested sequence's) own time where the clip begins." },
-        "dsl": { "type": "string", "description": "A Noisemaker DSL program; required for program clips." },
-        "loop": { "type": "number", "exclusiveMinimum": 0, "default": 8, "description": "The program's loop length in seconds: its time runs from 0 to this, then repeats." },
-        "sequenceId": { "type": "string", "description": "For a sequence clip, the sequence it plays." },
-        "loopSequence": { "type": "boolean", "default": true },
-        "opacity": { "type": "number", "minimum": 0, "maximum": 1, "default": 1 },
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "program",
+            "sequence",
+            "text",
+            "image",
+            "video"
+          ],
+          "description": "Defaults to \"sequence\" with sequenceId, \"text\" with text, \"image\" or \"video\" (by the media's kind) with mediaId, otherwise \"program\"."
+        },
+        "name": {
+          "type": "string"
+        },
+        "start": {
+          "$ref": "#/$defs/seconds"
+        },
+        "duration": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "offset": {
+          "type": "number",
+          "default": 0,
+          "description": "Seconds into the program's or nested sequence's own time, or into a video file, where the clip begins."
+        },
+        "dsl": {
+          "type": "string",
+          "description": "A Noisemaker DSL program; required for program clips. media() reads the tracks beneath the clip."
+        },
+        "loop": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 8,
+          "description": "The program's loop length in seconds: its time runs from 0 to this, then repeats."
+        },
+        "sequenceId": {
+          "type": "string",
+          "description": "For a sequence clip, the sequence it plays."
+        },
+        "loopSequence": {
+          "type": "boolean",
+          "default": true
+        },
+        "opacity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 1
+        },
         "blend": {
-          "enum": ["normal", "add", "screen", "multiply", "overlay", "lighten", "darken", "difference", "exclusion", "color-dodge", "color-burn", "hard-light", "soft-light", "hue", "saturation", "color", "luminosity"],
+          "enum": [
+            "normal",
+            "add",
+            "screen",
+            "multiply",
+            "overlay",
+            "lighten",
+            "darken",
+            "difference",
+            "exclusion",
+            "color-dodge",
+            "color-burn",
+            "hard-light",
+            "soft-light",
+            "hue",
+            "saturation",
+            "color",
+            "luminosity"
+          ],
           "default": "normal",
           "description": "How the clip combines with the tracks below it."
         },
-        "tint": { "type": ["string", "null"], "description": "Display colour of the clip on the timeline." }
-      }
+        "tint": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Display colour of the clip on the timeline."
+        },
+        "mediaId": {
+          "type": "string",
+          "description": "For an image or video clip, a key of the project's \"media\"."
+        },
+        "fit": {
+          "enum": [
+            "contain",
+            "cover",
+            "fill",
+            "none"
+          ],
+          "default": "contain",
+          "description": "How an image or video fills the frame before its scale applies; none shows it at its own pixel size."
+        },
+        "loopVideo": {
+          "type": "boolean",
+          "default": false,
+          "description": "A video clip longer than its file repeats it instead of holding the last frame."
+        },
+        "x": {
+          "type": "number",
+          "default": 0.5,
+          "description": "Horizontal position of a graphic as a fraction of the frame width: 0 is the left edge, 1 the right."
+        },
+        "y": {
+          "type": "number",
+          "default": 0.5,
+          "description": "Vertical position as a fraction of the frame height: 0 is the top, 1 the bottom."
+        },
+        "scale": {
+          "type": "number",
+          "minimum": 0,
+          "default": 1
+        },
+        "rotation": {
+          "type": "number",
+          "default": 0,
+          "description": "Degrees, clockwise."
+        },
+        "enter": {
+          "$ref": "#/$defs/motion",
+          "description": "How a graphic arrives. Text defaults to fade; images and video to none. A string is taken as the preset."
+        },
+        "exit": {
+          "$ref": "#/$defs/motion",
+          "description": "How a graphic leaves, ending at the clip's end."
+        },
+        "text": {
+          "type": "string",
+          "description": "The words of a text clip; \\n starts a new line, and long lines wrap at maxWidth."
+        },
+        "font": {
+          "type": "string",
+          "default": "Inter",
+          "description": "A family on the Noise Factor font service (fonts.noisefactor.io), such as Inter, Space Grotesk, Playfair Display, JetBrains Mono, Orbitron or Bungee."
+        },
+        "weight": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 1000,
+          "default": 700
+        },
+        "italic": {
+          "type": "boolean",
+          "default": false
+        },
+        "size": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 0.09,
+          "description": "Text height as a fraction of the frame height."
+        },
+        "lineHeight": {
+          "type": "number",
+          "default": 1.1,
+          "description": "Line spacing as a multiple of the size."
+        },
+        "letterSpacing": {
+          "type": "number",
+          "default": 0,
+          "description": "Extra space between letters as a fraction of the size."
+        },
+        "color": {
+          "type": "string",
+          "default": "#ffffff",
+          "description": "Any CSS colour."
+        },
+        "align": {
+          "enum": [
+            "left",
+            "center",
+            "right"
+          ],
+          "default": "center",
+          "description": "Alignment of the lines; the block is anchored at x by its left edge, centre or right edge."
+        },
+        "maxWidth": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 0.8,
+          "description": "Wrap width as a fraction of the frame width."
+        },
+        "background": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "A CSS colour for a box behind the text, or null for none."
+        }
+      },
+      "description": "A clip on a video track. Program clips run a Noisemaker DSL program; a program that reads media() reads the composite of the tracks beneath it. Sequence clips nest a sequence. Text, image and video clips are graphics: drawn with transparency over the tracks beneath at a position, scale and rotation, with enter and exit motion."
     },
     "transition": {
       "type": "object",
       "description": "A transition on the cut between two adjacent clips on one track. Without \"from\" it fades \"to\" in from black; without \"to\" it fades \"from\" out to black.",
       "properties": {
-        "id": { "type": "string" },
-        "from": { "type": ["string", "null"], "description": "Id of the outgoing clip." },
-        "to": { "type": ["string", "null"], "description": "Id of the incoming clip." },
-        "duration": { "type": "number", "exclusiveMinimum": 0, "default": 1 },
-        "preset": { "type": "string", "default": "dissolve", "description": "A transition from the library, such as dissolve, luma, glitch, flash, iris, wipe, hexagons or refract." },
-        "dsl": { "type": "string", "default": "", "description": "A custom transition program; empty uses the preset's." }
+        "id": {
+          "type": "string"
+        },
+        "from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Id of the outgoing clip."
+        },
+        "to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Id of the incoming clip."
+        },
+        "duration": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 1
+        },
+        "preset": {
+          "type": "string",
+          "default": "dissolve",
+          "description": "A transition from the library, such as dissolve, luma, glitch, flash, iris, wipe, hexagons or refract."
+        },
+        "dsl": {
+          "type": "string",
+          "default": "",
+          "description": "A custom transition program; empty uses the preset's."
+        }
       }
     },
     "audioTrack": {
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string", "description": "Defaults to A1, A2 and so on." },
-        "muted": { "type": "boolean", "default": false, "description": "Silences the track; programs still read it." },
-        "solo": { "type": "boolean", "default": false },
-        "gain": { "type": "number", "minimum": 0, "default": 1 },
-        "clips": { "type": "array", "items": { "$ref": "#/$defs/audioClip" } }
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "description": "Defaults to A1, A2 and so on."
+        },
+        "muted": {
+          "type": "boolean",
+          "default": false,
+          "description": "Silences the track; programs still read it."
+        },
+        "solo": {
+          "type": "boolean",
+          "default": false
+        },
+        "gain": {
+          "type": "number",
+          "minimum": 0,
+          "default": 1
+        },
+        "clips": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/audioClip"
+          }
+        }
       }
     },
     "audioClip": {
       "type": "object",
-      "required": ["mediaId", "start"],
+      "required": [
+        "mediaId",
+        "start"
+      ],
       "properties": {
-        "id": { "type": "string" },
-        "mediaId": { "type": "string", "description": "A key of the project's \"media\"." },
-        "name": { "type": "string" },
-        "start": { "$ref": "#/$defs/seconds" },
-        "duration": { "type": "number", "exclusiveMinimum": 0, "description": "Defaults to the file's length when media lists it, otherwise to the end of the sequence." },
-        "offset": { "$ref": "#/$defs/seconds", "default": 0, "description": "Seconds into the file where the clip begins." },
-        "gain": { "type": "number", "minimum": 0, "default": 1 },
-        "fadeIn": { "$ref": "#/$defs/seconds", "default": 0 },
-        "fadeOut": { "$ref": "#/$defs/seconds", "default": 0 }
+        "id": {
+          "type": "string"
+        },
+        "mediaId": {
+          "type": "string",
+          "description": "A key of the project's \"media\": an audio file, or a video whose sound plays."
+        },
+        "name": {
+          "type": "string"
+        },
+        "start": {
+          "$ref": "#/$defs/seconds"
+        },
+        "duration": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Defaults to the file's length when media lists it, otherwise to the end of the sequence."
+        },
+        "offset": {
+          "$ref": "#/$defs/seconds",
+          "default": 0,
+          "description": "Seconds into the file where the clip begins."
+        },
+        "gain": {
+          "type": "number",
+          "minimum": 0,
+          "default": 1
+        },
+        "fadeIn": {
+          "$ref": "#/$defs/seconds",
+          "default": 0
+        },
+        "fadeOut": {
+          "$ref": "#/$defs/seconds",
+          "default": 0
+        }
+      }
+    },
+    "motion": {
+      "type": [
+        "object",
+        "string"
+      ],
+      "properties": {
+        "preset": {
+          "enum": [
+            "none",
+            "fade",
+            "rise",
+            "drop",
+            "scale",
+            "wipe",
+            "blur",
+            "type"
+          ],
+          "description": "type reveals text a letter at a time; on an image or video it fades."
+        },
+        "duration": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0.5,
+          "description": "Seconds; an exit defaults to 0.4."
+        },
+        "ease": {
+          "type": "string",
+          "description": "An easing curve named like GSAP's: none, or power1 to power4, sine, expo, circ or back, followed by .in, .out or .inOut (power3.out). Enter defaults to power3.out, exit to power2.in."
+        }
       }
     }
   }

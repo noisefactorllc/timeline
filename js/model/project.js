@@ -3,9 +3,14 @@
  *
  * A project holds sequences and media. A sequence is a stack of visual
  * tracks (V1 at the bottom), audio tracks, markers and one post chain that
- * every composited frame passes through. Visual clips are DSL programs or
- * nested sequences; transitions sit on the cut between two adjacent clips
- * on one track, or fade a clip in from black or out to black.
+ * every composited frame passes through. Visual clips are DSL programs,
+ * nested sequences, text, images or video; transitions sit on the cut
+ * between two adjacent clips on one track, or fade a clip in from black or
+ * out to black.
+ *
+ * Text, image and video clips are graphics: drawn with transparency at a
+ * position, scale and rotation, with an enter and an exit motion. A
+ * program clip that reads `media()` reads the tracks beneath it.
  *
  * Everything here is plain JSON so a project saves, diffs and undoes as data.
  */
@@ -37,6 +42,46 @@ export const BLEND_MODES = [
     'difference', 'exclusion', 'color-dodge', 'color-burn', 'hard-light',
     'soft-light', 'hue', 'saturation', 'color', 'luminosity',
 ]
+
+/** How an image or video fills the frame before its scale applies. */
+export const FIT_MODES = ['contain', 'cover', 'fill', 'none']
+
+/** Enter and exit motions for graphics; `type` reveals text a letter at a time. */
+export const MOTION_PRESETS = ['none', 'fade', 'rise', 'drop', 'scale', 'wipe', 'blur', 'type']
+
+export const TEXT_ALIGN = ['left', 'center', 'right']
+
+export const GRAPHIC_TYPES = ['text', 'image', 'video']
+
+export function isGraphic(clip) {
+    return GRAPHIC_TYPES.includes(clip?.type)
+}
+
+/** Placement and motion shared by text, image and video clips. */
+function graphicDefaults({ enter = 'none', exit = 'none' } = {}) {
+    return {
+        x: 0.5,
+        y: 0.5,
+        scale: 1,
+        rotation: 0,
+        enter: { preset: enter, duration: 0.5, ease: 'power3.out' },
+        exit: { preset: exit, duration: 0.4, ease: 'power2.in' },
+    }
+}
+
+export const TEXT_DEFAULTS = {
+    text: 'Your words here',
+    font: 'Inter',
+    weight: 700,
+    italic: false,
+    size: 0.09,
+    lineHeight: 1.1,
+    letterSpacing: 0,
+    color: '#ffffff',
+    align: 'center',
+    maxWidth: 0.8,
+    background: null,
+}
 
 export function createProject({ name = 'Untitled project' } = {}) {
     const main = createSequence({ name: 'Main' })
@@ -137,6 +182,42 @@ export function createSequenceClip({
         tint: null,
         opacity,
         blend,
+    }
+}
+
+export function createTextClip({ name = 'Text', start = 0, duration = 4, opacity = 1, blend = 'normal', ...style } = {}) {
+    return {
+        id: uid('clp'),
+        type: 'text',
+        name,
+        start,
+        duration,
+        offset: 0,
+        tint: null,
+        opacity,
+        blend,
+        ...graphicDefaults({ enter: 'fade', exit: 'fade' }),
+        ...TEXT_DEFAULTS,
+        ...style,
+    }
+}
+
+/** An image or video clip showing a media file. */
+export function createMediaClip({ type = 'image', mediaId, name = 'Media', start = 0, duration = 5, offset = 0, fit = 'contain', opacity = 1, blend = 'normal' } = {}) {
+    return {
+        id: uid('clp'),
+        type,
+        mediaId,
+        name,
+        start,
+        duration,
+        offset,
+        tint: null,
+        opacity,
+        blend,
+        fit,
+        ...(type === 'video' ? { loopVideo: false } : {}),
+        ...graphicDefaults(),
     }
 }
 

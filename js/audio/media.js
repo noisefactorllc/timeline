@@ -10,6 +10,7 @@
 
 import { loadMedia, saveMedia } from '../storage/db.js'
 import { uid } from '../model/project.js'
+import { mediaKindOf, MEDIA_TYPES } from '../model/normalize.js'
 import { fetchBytes } from '../fetchBytes.js'
 
 export const SAMPLE_RATE = 48000
@@ -107,6 +108,84 @@ export async function importAudioFile(file) {
     if (source?.writable) media.path = await source.importFile(file)
     else await saveMedia({ id: media.id, name: media.name, type: media.type, bytes })
     buffers.set(mediaKey(media), buffer)
+    return media
+}
+
+/** A media file as a Blob, wherever the project keeps it. */
+export async function mediaBlob(media) {
+    if (!media) throw new Error('No media')
+    if (media.path) {
+        if (!source) throw new Error(`"${media.name}" is a file in a project folder, and no folder is open`)
+        const blob = await source.readBlob(media.path)
+        // An SVG draws only when it says it is one.
+        return blob.type || !media.type ? blob : new Blob([blob], { type: media.type })
+    }
+    if (media.url) return new Blob([await fetchBytes(new URL(media.url, document.baseURI))], { type: media.type })
+    const record = await loadMedia(media.id)
+    if (!record) throw new Error(`"${media.name}" is missing from this browser's storage`)
+    return new Blob([record.bytes], { type: media.type || record.type })
+}
+
+/** Width and height of an image file. */
+async function probeImage(blob) {
+    const url = URL.createObjectURL(blob)
+    try {
+        const img = new Image()
+        img.src = url
+        await img.decode()
+        // An SVG without a size of its own draws as a square.
+        return { width: img.naturalWidth || 1024, height: img.naturalHeight || 1024 }
+    } finally {
+        URL.revokeObjectURL(url)
+    }
+}
+
+/** Size, length and sound of a video file, and whether this browser can decode it. */
+export async function probeVideo(blob) {
+    const mb = await import('mediabunny')
+    const input = new mb.Input({ source: new mb.BlobSource(blob), formats: mb.ALL_FORMATS })
+    try {
+        const track = await input.getPrimaryVideoTrack()
+        if (!track) throw new Error('it has no video track')
+        if (!(await track.canDecode())) throw new Error(`this browser cannot decode its ${track.codec || 'video'} video`)
+        const audioTrack = await input.getPrimaryAudioTrack()
+        return {
+            width: track.displayWidth,
+            height: track.displayHeight,
+            duration: await input.computeDuration(),
+            hasAudio: !!audioTrack && await audioTrack.canDecode(),
+        }
+    } finally {
+        input.dispose?.()
+    }
+}
+
+/**
+ * Import an audio, image or video file and return its media record. Like
+ * audio, a project from a folder gets a copy of the file in the folder and
+ * any other keeps the bytes in IndexedDB.
+ */
+export async function importMediaFile(file) {
+    const kind = mediaKindOf(file.type, file.name)
+    if (!kind) throw new Error(`${file.name} is not an audio, image or video file`)
+    if (kind === 'audio') return importAudioFile(file)
+    let info
+    try {
+        info = kind === 'image' ? await probeImage(file) : await probeVideo(file)
+    } catch (err) {
+        throw new Error(`${file.name} cannot be used: ${err?.message || 'it did not decode'}`)
+    }
+    const ext = (file.name.match(/\.([^.]+)$/)?.[1] || '').toLowerCase()
+    const media = {
+        id: uid('med'),
+        kind,
+        name: file.name.replace(/\.[^.]+$/, '') || kind,
+        type: file.type || MEDIA_TYPES[ext]?.[1] || `${kind}/*`,
+        size: file.size,
+        ...info,
+    }
+    if (source?.writable) media.path = await source.importFile(file)
+    else await saveMedia({ id: media.id, name: media.name, type: media.type, bytes: await file.arrayBuffer() })
     return media
 }
 

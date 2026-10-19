@@ -94,6 +94,15 @@ export class FolderSource {
         return bytes
     }
 
+    /** A file in the folder as a Blob, read lazily: a long video is not loaded into memory. */
+    async readBlob(path) {
+        const safe = safeMediaPath(path)
+        const file = safe && await this._file(safe)
+        if (!file) throw new Error(`${path} is missing from ${this.name}`)
+        this.revs.set(safe, rev(file))
+        return file
+    }
+
     /**
      * Write the project back, unless the file changed on disk since this
      * page last read it; then the watcher reloads it and nothing is lost,
@@ -210,6 +219,11 @@ export class UrlSource {
         const safe = safeMediaPath(path)
         if (!safe) return Promise.reject(new Error(`${path} is not a path inside the project`))
         return fetchBytes(new URL(safe.split('/').map(encodeURIComponent).join('/'), this.base), onProgress, { cache: 'no-store' })
+    }
+
+    async readBlob(path) {
+        const bytes = await this.readBytes(path)
+        return new Blob([bytes])
     }
 
     async save() {

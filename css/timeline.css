@@ -1238,6 +1238,26 @@ button {
         color-mix(in oklab, var(--tint) 24%, var(--hf-bg-elevated));
 }
 
+/* Graphics sit over the tracks beneath, so their lanes read as see-through. */
+.tl-clip.is-text {
+    --tint: var(--hf-text-bright);
+    background:
+        repeating-linear-gradient(135deg, color-mix(in oklab, var(--tint) 10%, transparent) 0 6px, transparent 6px 12px),
+        color-mix(in oklab, var(--tint) 12%, var(--hf-bg-elevated));
+}
+
+.tl-clip.is-image { --tint: var(--hf-blue); }
+.tl-clip.is-video { --tint: var(--hf-yellow); }
+
+.tl-clip-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--hf-text-normal);
+    font-size: 11px;
+}
+
 .tl-clip-wave {
     position: absolute;
     inset: 16px 0 2px 0;
@@ -1564,6 +1584,31 @@ button {
     width: 18px;
     height: 18px;
     accent-color: var(--hf-text-normal);
+}
+
+.tl-field input[type="color"] {
+    padding: 2px;
+    cursor: pointer;
+}
+
+.tl-textarea {
+    display: block;
+    width: 100%;
+    min-height: 64px;
+    padding: 6px 8px;
+    border: 1px solid var(--hf-bg-muted);
+    border-radius: var(--hf-radius-sm);
+    background: var(--hf-bg-base);
+    color: var(--hf-text-normal);
+    font: inherit;
+    font-size: var(--hf-size-sm, 13px);
+    line-height: 1.4;
+    resize: vertical;
+}
+
+.tl-textarea:focus {
+    outline: none;
+    border-color: var(--hf-accent);
 }
 
 .tl-section-title {

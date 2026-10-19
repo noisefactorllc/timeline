@@ -1,5 +1,6 @@
 /**
- * The library: programs, transitions, post chains, sequences and audio.
+ * The library: programs, transitions, post chains, sequences and media
+ * (audio, images and video).
  * Drag anything onto the timeline, or activate it to add it at the
  * playhead on the target track. Program cards show a frame rendered by the
  * thumbnail renderer once they scroll into view.
@@ -15,7 +16,7 @@ const TABS = [
     ['transitions', 'Transitions'],
     ['post', 'Post'],
     ['sequences', 'Sequences'],
-    ['audio', 'Audio'],
+    ['media', 'Media'],
 ]
 
 function el(tag, className, attrs = {}) {
@@ -68,7 +69,7 @@ export class LibraryView {
         this.body = el('div', 'tl-panel-body', { role: 'tabpanel' })
         root.replaceChildren(this.tabsEl, this.body)
         store.on('project', () => {
-            if (this.tab === 'sequences' || this.tab === 'audio') this.render()
+            if (this.tab === 'sequences' || this.tab === 'media') this.render()
         })
         this.render()
         this._loadLibrary()
@@ -107,7 +108,7 @@ export class LibraryView {
             case 'transitions': this._renderTransitions(); break
             case 'post': this._renderPost(); break
             case 'sequences': this._renderSequences(); break
-            case 'audio': this._renderAudio(); break
+            case 'media': this._renderMedia(); break
         }
         this.body.scrollTop = scroll
     }
@@ -249,29 +250,42 @@ export class LibraryView {
         )
     }
 
-    _renderAudio() {
+    _renderMedia() {
         const project = this.store.project
         const buttons = el('div', 'tl-button-row')
         const imp = el('button', 'tl-button', { type: 'button' })
-        imp.append(icon('upload'), document.createTextNode('Import audio'))
-        imp.addEventListener('click', () => this.actions.importAudio())
-        buttons.append(imp)
+        imp.append(icon('upload'), document.createTextNode('Import'))
+        imp.addEventListener('click', () => this.actions.importMedia())
+        const text = el('button', 'tl-button', { type: 'button' })
+        text.append(icon('title'), document.createTextNode('Add text'))
+        text.addEventListener('click', () => this.actions.addText())
+        buttons.append(imp, text)
         const rows = el('div', 'tl-rows')
-        const media = Object.values(project.media || {}).filter(m => m.kind === 'audio')
+        const media = Object.values(project.media || {})
+        const kinds = {
+            audio: { swatch: 'var(--hf-green)', iconName: 'graphic_eq' },
+            image: { swatch: 'var(--hf-blue)', iconName: 'image' },
+            video: { swatch: 'var(--hf-yellow)', iconName: 'movie' },
+        }
         for (const m of media) {
+            const look = kinds[m.kind] || kinds.audio
+            const size = m.width ? `${m.width}×${m.height}` : ''
+            const length = m.kind !== 'image' ? formatTimecode(m.duration || 0, 30) : ''
+            const payload = m.kind === 'audio' ? { kind: 'audio', id: m.id } : { kind: 'media', id: m.id }
             rows.append(this._row({
                 title: m.name,
-                sub: `${formatTimecode(m.duration || 0, 30)}${m.recipe ? '  generated' : ''}`,
-                swatch: 'var(--hf-green)',
-                iconName: 'graphic_eq',
-                payload: { kind: 'audio', id: m.id },
-                onActivate: () => this.actions.addPayloadAtPlayhead({ kind: 'audio', id: m.id }),
+                sub: [m.kind, size, length].filter(Boolean).join('  '),
+                swatch: look.swatch,
+                iconName: look.iconName,
+                payload,
+                onActivate: () => (m.kind === 'audio' ? this.actions.addPayloadAtPlayhead(payload) : this.actions.placeVisualMedia(m)),
             }))
         }
-        if (!media.length) rows.append(el('p', 'tl-empty', { text: 'Import a track, or drop an audio file anywhere on the window.' }))
+        if (!media.length) rows.append(el('p', 'tl-empty', { text: 'Import audio, images or video, or drop files anywhere on the window.' }))
+        const where = this.store.source?.kind === 'folder' ? `copied into ${this.store.source.name}` : 'kept in this browser'
         this.body.append(
             buttons,
-            el('p', 'tl-hint', { text: 'Imported audio is kept in this browser. Drag it onto an audio track; programs read each track with audio(..., channel: N).' }),
+            el('p', 'tl-hint', { text: `Imported files are ${where} and never uploaded. Drag images and video onto a video track and audio onto an audio track; programs read each audio track with audio(..., channel: N).` }),
             rows,
         )
     }

@@ -8,7 +8,7 @@
  * pointer is released.
  */
 
-import { clipEnd, findClip, createProgramClip, createSequenceClip, createAudioClip, wouldCreateCycle } from '../model/project.js'
+import { clipEnd, findClip, createProgramClip, createSequenceClip, createAudioClip, createMediaClip, wouldCreateCycle, isGraphic } from '../model/project.js'
 import { transitionSpan } from '../model/evaluate.js'
 import { moveClips, trimClip, setTransitionDuration, addTransition, cutNear, insertClip, addMarker } from '../model/edit.js'
 import { formatTimecode, formatRulerLabel, barSeconds, beatSeconds, loopPhase, clamp } from '../model/time.js'
@@ -61,10 +61,11 @@ export function chainSummary(dsl) {
 }
 
 export class TimelineView {
-    constructor(root, { store, thumbs, pool, actions, audio }) {
+    constructor(root, { store, thumbs, pool, actions, audio, graphics }) {
         this.root = root
         this.store = store
         this.thumbs = thumbs
+        this.graphics = graphics
         this.pool = pool
         this.actions = actions
         this.audio = audio
@@ -76,6 +77,7 @@ export class TimelineView {
         store.on('view', () => this.render())
         store.on('playhead', () => this.updatePlayhead())
         thumbs.onReady(() => this._scheduleStrips())
+        if (graphics) graphics.onThumbnail = () => this._scheduleStrips()
         pool.compiledListeners.add((entry, result) => {
             if (!result.success || entry.hadError) this.render()
             entry.hadError = !result.success
@@ -350,7 +352,8 @@ export class TimelineView {
 
     _clipEl(seq, clip, kind) {
         const sel = this.store.selection
-        const node = el('div', `tl-clip${kind === 'audio' ? ' is-audio' : ''}${clip.type === 'sequence' ? ' is-sequence' : ''}`, {
+        const typeClass = kind === 'audio' ? ' is-audio' : clip.type === 'program' ? '' : ` is-${clip.type}`
+        const node = el('div', `tl-clip${typeClass}`, {
             tabindex: '0',
             role: 'button',
             'aria-label': `${clip.name}, ${formatTimecode(clip.start, seq.fps)}`,
@@ -364,13 +367,17 @@ export class TimelineView {
             if (tint) node.style.setProperty('--tint', tint)
         }
         if (clip.type === 'program' && this.pool.errorFor(clip.dsl)) node.classList.add('is-error')
+        if (isGraphic(clip) && this.graphics?.problemFor(clip)) {
+            node.classList.add('is-error')
+            node.title = this.graphics.problemFor(clip)
+        }
         node.style.left = `${this.timeToX(clip.start)}px`
         node.style.width = `${Math.max(2, this.timeToX(clip.duration))}px`
 
         if (kind === 'audio') {
             const wave = el('canvas', 'tl-clip-wave')
             node.append(wave)
-        } else if (clip.type === 'program') {
+        } else if (clip.type === 'program' || clip.type === 'image' || clip.type === 'video') {
             const strip = el('canvas', 'tl-clip-strip')
             node.append(strip)
         }
@@ -381,6 +388,12 @@ export class TimelineView {
                 const tag = el('span', 'tl-clip-tag')
                 tag.append(icon('layers'), document.createTextNode(' nested'))
                 label.append(tag)
+            } else if (isGraphic(clip)) {
+                const tag = el('span', 'tl-clip-tag', { title: clip.type })
+                tag.append(icon({ text: 'title', image: 'image', video: 'movie' }[clip.type]))
+                label.append(tag)
+                const words = clip.type === 'text' ? clip.text.replace(/\s+/g, ' ').trim() : ''
+                if (words && words !== clip.name) label.append(el('span', 'tl-clip-text', { text: words }))
             } else {
                 label.append(el('span', 'tl-clip-tag', { text: loopLabel(clip.loop, seq) }))
                 if (/audio\s*\(/.test(clip.dsl)) {
@@ -566,7 +579,8 @@ export class TimelineView {
             g.setTransform(dpr, 0, 0, dpr, 0, 0)
             g.clearRect(0, 0, w, ch / dpr)
             if (kind === 'audio') this._drawWave(g, clip, vis0 - x0, w, ch / dpr)
-            else this._drawFilm(g, seq, clip, vis0 - x0, w, ch / dpr)
+            else if (clip.type === 'program') this._drawFilm(g, seq, clip, vis0 - x0, w, ch / dpr)
+            else this._drawMediaStrip(g, clip, vis0 - x0, w, ch / dpr)
         }
     }
 
@@ -590,6 +604,31 @@ export class TimelineView {
                 this.thumbs.request(clip.dsl, phase, { priority: 1 })
             }
         }
+    }
+
+    /** Pictures of an image or video clip's media along its length. */
+    _drawMediaStrip(g, clip, offsetPx, w, h) {
+        const media = this.store.project.media[clip.mediaId]
+        if (!media || !this.graphics) return
+        const aspect = media.width && media.height ? media.width / media.height : 16 / 9
+        const tileW = Math.max(24, h * aspect)
+        const first = Math.floor(offsetPx / tileW)
+        const last = Math.ceil((offsetPx + w) / tileW)
+        g.globalAlpha = 0.92
+        for (let i = first; i < last; i++) {
+            const xIn = i * tileW
+            let time = 0
+            if (media.kind === 'video') {
+                const local = clip.offset + Math.min((xIn + tileW / 2) / this.pps, clip.duration)
+                const length = media.duration || 1
+                time = clip.loopVideo ? local % length : Math.min(local, length)
+                // Neighbouring tiles share a picture until they are a second apart.
+                time = Math.floor(time)
+            }
+            const pic = this.graphics.thumbnail(media, time)
+            if (pic) g.drawImage(pic, xIn - offsetPx, 0, tileW, h)
+        }
+        g.globalAlpha = 1
     }
 
     _drawWave(g, clip, offsetPx, w, h) {
@@ -857,7 +896,7 @@ export class TimelineView {
             window.removeEventListener('pointerup', up)
             this.snapEl.hidden = true
             const limits = {}
-            if (found.kind === 'audio') {
+            if (found.kind === 'audio' || (clip.type === 'video' && !clip.loopVideo)) {
                 const media = this.store.project.media[clip.mediaId]
                 if (media?.duration) limits.sourceDuration = media.duration
             } else if (clip.type === 'sequence' && clip.loopSequence === false) {
@@ -1151,9 +1190,20 @@ export class TimelineView {
             this.store.selectClip(clip.id)
             return
         }
+        if (payload.kind === 'media' && laneKind === 'video') {
+            const media = this.store.project.media[payload.id]
+            if (!media || (media.kind !== 'image' && media.kind !== 'video')) return
+            const length = media.kind === 'video' ? media.duration : bar * 2
+            const clip = createMediaClip({ type: media.kind, mediaId: media.id, name: media.name, start: t, duration: Math.max(1 / seq.fps, Math.min(length, seq.duration - t)) })
+            this.store.edit(`Add ${media.kind}`, s => {
+                insertClip(s.tracks.find(x => x.id === trackId), clip)
+            })
+            this.store.selectClip(clip.id)
+            return
+        }
         if (payload.kind === 'audio' && laneKind === 'audio') {
             const media = this.store.project.media[payload.id]
-            if (!media) return
+            if (!media || media.kind === 'image') return
             const clip = createAudioClip({ mediaId: media.id, name: media.name, start: t, duration: Math.min(media.duration || 10, seq.duration - t) })
             this.store.edit('Add audio', s => {
                 insertClip(s.audioTracks.find(x => x.id === trackId), clip)
@@ -1161,7 +1211,7 @@ export class TimelineView {
             this.store.selectClip(clip.id)
             return
         }
-        const where = { program: 'a video track', sequence: 'a video track', transition: 'a cut on a video track', post: 'the post lane', audio: 'an audio track' }
+        const where = { program: 'a video track', sequence: 'a video track', media: 'a video track', transition: 'a cut on a video track', post: 'the post lane', audio: 'an audio track' }
         this.actions.status(`Drop this on ${where[payload.kind] || 'the timeline'}`)
     }
 }

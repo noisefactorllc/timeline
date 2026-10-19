@@ -11,12 +11,30 @@
  * plays but is probably not what was meant.
  */
 
-import { SCHEMA_VERSION, BLEND_MODES, DEFAULT_POST_DSL, DEFAULT_PROGRAM_DSL, nestedSequenceIds } from './project.js'
+import {
+    SCHEMA_VERSION, BLEND_MODES, DEFAULT_POST_DSL, DEFAULT_PROGRAM_DSL, nestedSequenceIds,
+    FIT_MODES, MOTION_PRESETS, TEXT_ALIGN, TEXT_DEFAULTS, GRAPHIC_TYPES,
+} from './project.js'
 import { POST_PRESETS } from '../data/presets.js'
+import { isEaseName } from './ease.js'
 
-export const AUDIO_TYPES = {
-    wav: 'audio/wav', mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg',
-    oga: 'audio/ogg', opus: 'audio/ogg', flac: 'audio/flac', webm: 'audio/webm',
+/** File extensions Timeline reads, with their kind and MIME type. A .webm is taken as video; its sound still plays from an audio clip. */
+export const MEDIA_TYPES = {
+    wav: ['audio', 'audio/wav'], mp3: ['audio', 'audio/mpeg'], m4a: ['audio', 'audio/mp4'], aac: ['audio', 'audio/aac'],
+    ogg: ['audio', 'audio/ogg'], oga: ['audio', 'audio/ogg'], opus: ['audio', 'audio/ogg'], flac: ['audio', 'audio/flac'],
+    png: ['image', 'image/png'], jpg: ['image', 'image/jpeg'], jpeg: ['image', 'image/jpeg'], webp: ['image', 'image/webp'],
+    gif: ['image', 'image/gif'], svg: ['image', 'image/svg+xml'], avif: ['image', 'image/avif'],
+    mp4: ['video', 'video/mp4'], m4v: ['video', 'video/mp4'], mov: ['video', 'video/quicktime'], webm: ['video', 'video/webm'],
+    mkv: ['video', 'video/x-matroska'],
+}
+
+export const MEDIA_KINDS = ['audio', 'image', 'video']
+
+/** The kind of a file from its MIME type or name: audio, image, video, or null. */
+export function mediaKindOf(type = '', name = '') {
+    const major = String(type).split('/')[0]
+    if (MEDIA_KINDS.includes(major)) return major
+    return MEDIA_TYPES[extensionOf(name)]?.[0] || null
 }
 
 const isNumber = v => typeof v === 'number' && Number.isFinite(v)
@@ -33,7 +51,7 @@ export function safeMediaPath(path) {
 }
 
 function extensionOf(path) {
-    return (path.match(/\.([^./]+)$/)?.[1] || '').toLowerCase()
+    return (String(path).match(/\.([^./]+)$/)?.[1] || '').toLowerCase()
 }
 
 export function normalizeProject(raw, { name: fallbackName = 'Untitled project' } = {}) {
@@ -61,11 +79,11 @@ export function normalizeProject(raw, { name: fallbackName = 'Untitled project' 
             report('error', `media "${id}"`, 'needs a "path" to a file in the project folder')
         }
         const source = record.path || m.url || ''
-        const ext = extensionOf(source)
-        record.kind = m.kind || 'audio'
-        if (record.kind !== 'audio') report('error', `media "${id}"`, `kind "${record.kind}" is not supported yet; Timeline plays audio files`)
-        else if (source && !AUDIO_TYPES[ext] && !m.type) report('warning', `media "${id}"`, `"${source}" does not look like an audio file`)
-        record.type = m.type || AUDIO_TYPES[ext] || 'audio/*'
+        const known = MEDIA_TYPES[extensionOf(source)]
+        record.kind = m.kind || known?.[0] || mediaKindOf(m.type) || 'audio'
+        if (!MEDIA_KINDS.includes(record.kind)) report('error', `media "${id}"`, `kind "${record.kind}" is not one of ${MEDIA_KINDS.join(', ')}`)
+        else if (source && !known && !m.type) report('warning', `media "${id}"`, `"${source}" is not a file type Timeline knows; it is read as ${record.kind}`)
+        record.type = m.type || known?.[1] || `${record.kind}/*`
         record.name = m.name || source.split('/').pop()?.replace(/\.[^.]+$/, '') || id
         media[id] = record
     }
@@ -149,7 +167,7 @@ function normalizeSequence(seqId, s, media, report) {
         const track = isObject(t) ? t : {}
         const trackName = typeof track.name === 'string' && track.name ? track.name : `V${i + 1}`
         const id = track.id || `${seqId}/${trackName}`
-        const clips = (Array.isArray(track.clips) ? track.clips : []).map((c, j) => normalizeVisualClip(c, `${id}/${j + 1}`, `${name} › ${trackName}`, report)).filter(Boolean)
+        const clips = (Array.isArray(track.clips) ? track.clips : []).map((c, j) => normalizeVisualClip(c, `${id}/${j + 1}`, `${name} › ${trackName}`, media, report)).filter(Boolean)
         return {
             ...track,
             id,
@@ -180,6 +198,7 @@ function normalizeSequence(seqId, s, media, report) {
             const clipWhere = `${where} › "${c.name || c.mediaId || `clip ${j + 1}`}"`
             const m = media[c.mediaId]
             if (!m) report('error', clipWhere, `mediaId "${c.mediaId}" names nothing under "media"; the clip is silent`)
+            else if (m.kind === 'image') report('error', clipWhere, `mediaId "${c.mediaId}" is an image; an audio clip plays audio or the sound of a video`)
             const start = isNumber(c.start) && c.start >= 0 ? c.start : 0
             const fallback = isNumber(m?.duration) ? m.duration - (c.offset || 0) : seq.duration - start
             return {
@@ -231,12 +250,14 @@ function normalizePost(raw, seqName, report) {
     }
 }
 
-function normalizeVisualClip(c, defaultId, where, report) {
+const VISUAL_TYPES = ['program', 'sequence', ...GRAPHIC_TYPES]
+
+function normalizeVisualClip(c, defaultId, where, media, report) {
     if (!isObject(c)) return null
-    const type = c.type || (c.sequenceId ? 'sequence' : 'program')
+    const type = c.type || (c.sequenceId ? 'sequence' : c.text !== undefined ? 'text' : c.mediaId ? (media[c.mediaId]?.kind === 'video' ? 'video' : 'image') : 'program')
     const label = `${where} › "${c.name || defaultId}"`
-    if (type !== 'program' && type !== 'sequence') {
-        report('error', label, `type "${type}" is not a clip type Timeline knows; the clip was left out`)
+    if (!VISUAL_TYPES.includes(type)) {
+        report('error', label, `type "${type}" is not one of ${VISUAL_TYPES.join(', ')}; the clip was left out`)
         return null
     }
     if (!isNumber(c.start) || c.start < 0) report('error', label, 'needs a "start" in seconds, 0 or more; it starts at 0')
@@ -247,7 +268,7 @@ function normalizeVisualClip(c, defaultId, where, report) {
         ...c,
         id: c.id || defaultId,
         type,
-        name: c.name || (type === 'sequence' ? c.sequenceId : 'Program'),
+        name: c.name || (type === 'sequence' ? c.sequenceId : type === 'program' ? 'Program' : type === 'text' ? String(c.text ?? 'Text').split('\n')[0].slice(0, 40) : media[c.mediaId]?.name || type),
         start: isNumber(c.start) && c.start >= 0 ? c.start : 0,
         duration: isNumber(c.duration) && c.duration > 0 ? c.duration : 4,
         offset: isNumber(c.offset) ? c.offset : 0,
@@ -261,10 +282,64 @@ function normalizeVisualClip(c, defaultId, where, report) {
             clip.dsl = DEFAULT_PROGRAM_DSL
         }
         clip.loop = isNumber(c.loop) && c.loop > 0 ? c.loop : 8
-    } else {
+    } else if (type === 'sequence') {
         clip.loopSequence = c.loopSequence !== false
+    } else {
+        normalizeGraphic(clip, c, label, media, report)
     }
     return clip
+}
+
+/** Placement, motion and type-specific settings for text, image and video clips. */
+function normalizeGraphic(clip, c, label, media, report) {
+    const num = (key, fallback, min = -Infinity, max = Infinity) => {
+        const v = c[key]
+        if (v === undefined) return fallback
+        if (!isNumber(v) || v < min || v > max) {
+            report('warning', label, `"${key}" must be a number${Number.isFinite(min) ? ` from ${min}` : ''}${Number.isFinite(max) ? ` to ${max}` : ''}; it uses ${fallback}`)
+            return fallback
+        }
+        return v
+    }
+    clip.x = num('x', 0.5)
+    clip.y = num('y', 0.5)
+    clip.scale = num('scale', 1, 0)
+    clip.rotation = num('rotation', 0)
+    const isText = clip.type === 'text'
+    for (const side of ['enter', 'exit']) {
+        const m = isObject(c[side]) ? c[side] : typeof c[side] === 'string' ? { preset: c[side] } : {}
+        let preset = m.preset ?? (isText ? 'fade' : 'none')
+        if (!MOTION_PRESETS.includes(preset)) {
+            report('warning', label, `${side} preset "${preset}" is not one of ${MOTION_PRESETS.join(', ')}; it uses none`)
+            preset = 'none'
+        }
+        let easeName = m.ease ?? (side === 'enter' ? 'power3.out' : 'power2.in')
+        if (!isEaseName(easeName)) {
+            report('warning', label, `${side} ease "${easeName}" is not an ease such as power2.out or expo.inOut; it uses power1.out`)
+            easeName = 'power1.out'
+        }
+        clip[side] = { ...m, preset, duration: isNumber(m.duration) && m.duration >= 0 ? m.duration : side === 'enter' ? 0.5 : 0.4, ease: easeName }
+    }
+    if (isText) {
+        for (const [key, fallback] of Object.entries(TEXT_DEFAULTS)) if (clip[key] === undefined) clip[key] = fallback
+        clip.text = String(clip.text)
+        clip.size = num('size', TEXT_DEFAULTS.size, 0.001, 2)
+        clip.weight = num('weight', TEXT_DEFAULTS.weight, 1, 1000)
+        clip.lineHeight = num('lineHeight', TEXT_DEFAULTS.lineHeight, 0.1, 10)
+        clip.letterSpacing = num('letterSpacing', TEXT_DEFAULTS.letterSpacing, -1, 5)
+        clip.maxWidth = num('maxWidth', TEXT_DEFAULTS.maxWidth, 0.01, 10)
+        if (!TEXT_ALIGN.includes(clip.align)) {
+            report('warning', label, `align "${clip.align}" is not one of ${TEXT_ALIGN.join(', ')}; it is centered`)
+            clip.align = 'center'
+        }
+        return
+    }
+    const m = media[c.mediaId]
+    if (!m) report('error', label, `mediaId "${c.mediaId}" names nothing under "media"; the clip shows nothing`)
+    else if (m.kind !== clip.type) report('error', label, `mediaId "${c.mediaId}" is ${m.kind === 'audio' ? 'audio' : `an ${m.kind}`}; a${clip.type === 'image' ? 'n image' : ' video'} clip needs ${clip.type === 'image' ? 'an image' : 'a video'}`)
+    if (!FIT_MODES.includes(clip.fit ?? 'contain')) report('warning', label, `fit "${clip.fit}" is not one of ${FIT_MODES.join(', ')}; it uses contain`)
+    clip.fit = FIT_MODES.includes(clip.fit) ? clip.fit : 'contain'
+    if (clip.type === 'video') clip.loopVideo = !!c.loopVideo
 }
 
 function checkPlacement(seq, track, report) {

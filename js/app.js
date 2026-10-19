@@ -39,16 +39,17 @@ const MODULES = [
     './render/thumbnails.js', './ui/timeline.js', './ui/monitor.js', './ui/inspector.js', './ui/library.js',
     './ui/exportDialog.js', './ui/dialogs.js', './data/demoProject.js', './data/presets.js', './model/project.js',
     './model/edit.js', './model/time.js', './storage/db.js', './storage/projectFile.js', './export/exporter.js',
-    './storage/folder.js',
+    './storage/folder.js', './render/graphics.js', './model/normalize.js',
 ]
 let modulesLoaded = 0
 const [
-    { Store }, { AudioEngine }, { importAudioFile, getAudioBuffer, usesEarlierDemo, setMediaSource }, { RendererPool },
+    { Store }, { AudioEngine }, { importMediaFile, getAudioBuffer, usesEarlierDemo, setMediaSource }, { RendererPool },
     { SequenceRenderer }, { Thumbnails }, { TimelineView }, { MonitorView }, { InspectorView }, { LibraryView },
     { ExportDialog }, { askText, askConfirm }, { createDemoProject }, { transitionPreset, postPreset, DEFAULT_TRANSITION },
     model, edits, { frameAt, beatSeconds, barSeconds, clamp },
     { loadProject, listProjects, readPrefs, writePrefs, saveProject, saveFolderHandle, loadFolderHandle },
     { projectToFile, projectFromFile, PROJECT_EXTENSION }, { exportSequence }, { FolderSource, UrlSource },
+    { GraphicsRenderer }, { mediaKindOf },
 ] = await Promise.all(MODULES.map(path => import(path).then(module => {
     modulesLoaded++
     boot.progress('editor', modulesLoaded / MODULES.length, `${modulesLoaded} of ${MODULES.length} modules`)
@@ -59,7 +60,8 @@ boot.done('editor', `${MODULES.length} modules`)
 const store = new Store()
 const audio = new AudioEngine({ AudioState: engine.AudioState })
 const pool = new RendererPool({ capacity: 12, width: 960, height: 540, audioState: audio.state })
-const renderer = new SequenceRenderer({ pool, audio, getProject: () => store.project })
+const graphics = new GraphicsRenderer({ getProject: () => store.project, onChange: () => { dirty = true } })
+const renderer = new SequenceRenderer({ pool, audio, graphics, getProject: () => store.project })
 const thumbs = new Thumbnails({ AudioState: engine.AudioState })
 
 let dirty = true
@@ -484,13 +486,51 @@ const actions = {
         })
     },
 
-    importAudio() {
+    importMedia() {
         const input = document.createElement('input')
         input.type = 'file'
-        input.accept = 'audio/*'
+        input.accept = 'audio/*,image/*,video/*'
         input.multiple = true
         input.addEventListener('change', () => actions.handleFiles([...input.files]))
         input.click()
+    },
+
+    /** Add a text clip at the playhead, over whatever is showing there. */
+    addText() {
+        const seq = store.seq
+        const start = store.playhead
+        const bar = barSeconds(seq.bpm, seq.beatsPerBar)
+        const clip = model.createTextClip({ start, duration: Math.max(1 / seq.fps, Math.min(bar * 2, seq.duration - start)) })
+        store.edit('Add text', s => {
+            const target = s.tracks.find(t => t.id === store.selection.track && !t.locked)
+            edits.insertClip(target || edits.overlayTrack(s, clip.start, clip.start + clip.duration), clip)
+        })
+        store.selectClip(clip.id)
+    },
+
+    /** Put an imported image or video at the playhead, over whatever is showing; a video's sound goes on an audio track. */
+    placeVisualMedia(media) {
+        const start = store.playhead
+        const length = media.kind === 'video' ? media.duration : barSeconds(store.seq.bpm, store.seq.beatsPerBar) * 2
+        let clip = null
+        let extended = false
+        store.edit(`Import ${media.kind}`, (s, p) => {
+            p.media[media.id] = media
+            // A video longer than the sequence extends the sequence to fit it.
+            if (media.kind === 'video' && start + length > s.duration) {
+                s.duration = Math.ceil((start + length) * s.fps) / s.fps
+                extended = true
+            }
+            const duration = Math.max(1 / s.fps, Math.min(length, s.duration - start))
+            clip = model.createMediaClip({ type: media.kind, mediaId: media.id, name: media.name, start, duration })
+            const target = s.tracks.find(t => t.id === store.selection.track && !t.locked)
+            edits.insertClip(target || edits.overlayTrack(s, start, start + duration), clip)
+            if (media.kind === 'video' && media.hasAudio) {
+                edits.insertClip(edits.freeAudioTrack(s, start, start + duration), model.createAudioClip({ mediaId: media.id, name: media.name, start, duration }))
+            }
+        })
+        if (clip) store.selectClip(clip.id)
+        actions.status(extended ? `${media.name} is on the timeline; the sequence now runs to its end` : `${media.name} is on the timeline`)
     },
 
     async handleFiles(files) {
@@ -499,13 +539,18 @@ const actions = {
                 await actions.openProjectFromFile(file)
                 continue
             }
-            if (!file.type.startsWith('audio/') && !/\.(wav|mp3|m4a|aac|ogg|oga|flac|opus|webm)$/i.test(file.name)) {
-                actions.status(`${file.name} is not an audio file`)
+            const kind = mediaKindOf(file.type, file.name)
+            if (!kind) {
+                actions.status(`${file.name} is not an audio, image or video file`)
                 continue
             }
             try {
                 actions.status(`Importing ${file.name}`)
-                const media = await importAudioFile(file)
+                const media = await importMediaFile(file)
+                if (kind !== 'audio') {
+                    actions.placeVisualMedia(media)
+                    continue
+                }
                 const seq = store.seq
                 const firstAudio = !seq.audioTracks.some(t => t.clips.length)
                 let extended = false
@@ -529,7 +574,7 @@ const actions = {
                 if (firstAudio) await actions.detectTempo()
             } catch (err) {
                 console.error(err)
-                actions.status(`Could not import ${file.name}: ${err?.message || 'unsupported audio'}`)
+                actions.status(`Could not import ${file.name}: ${err?.message || `unsupported ${kind}`}`)
             }
         }
     },
@@ -660,7 +705,7 @@ const actions = {
 
 // --- views -------------------------------------------------------------------
 
-const timeline = new TimelineView(document.getElementById('timeline'), { store, thumbs, pool, actions, audio })
+const timeline = new TimelineView(document.getElementById('timeline'), { store, thumbs, pool, actions, audio, graphics })
 const monitor = new MonitorView(document.getElementById('monitor'), { store, actions })
 new InspectorView(document.getElementById('inspector'), { store, pool, actions })
 new LibraryView(document.getElementById('library'), { store, thumbs, actions })
@@ -750,7 +795,7 @@ menu.config = {
                     { id: 'openFile', label: 'Open project file', onSelect: () => actions.openProjectFile() },
                     { id: 'saveFile', label: 'Save project file', shortcut: mod('S'), onSelect: () => actions.saveProjectFile() },
                     { type: 'separator' },
-                    { id: 'importAudio', label: 'Import audio', onSelect: () => actions.importAudio() },
+                    { id: 'importMedia', label: 'Import audio, images or video', onSelect: () => actions.importMedia() },
                     { id: 'exportVideo', label: 'Export video', shortcut: mod('E'), onSelect: () => actions.exportVideo() },
                 ],
             },
@@ -769,6 +814,7 @@ menu.config = {
                     { id: 'cut', label: 'Cut at playhead', shortcut: mod('K'), onSelect: () => actions.cutAtPlayhead() },
                     { id: 'transition', label: 'Add transition', shortcut: mod('D'), onSelect: () => actions.addTransitionAtPlayhead() },
                     { id: 'marker', label: 'Add marker', shortcut: 'M', onSelect: () => actions.addMarker() },
+                    { id: 'text', label: 'Add text', shortcut: 'T', onSelect: () => actions.addText() },
                 ],
             },
             {
@@ -964,6 +1010,7 @@ window.addEventListener('keydown', e => {
         case 'i': case 'I': handled(); actions.setIn(); return
         case 'o': case 'O': handled(); actions.setOut(); return
         case 'm': case 'M': handled(); actions.addMarker(); return
+        case 't': case 'T': handled(); actions.addText(); return
         case 'Delete': case 'Backspace': handled(); actions.deleteSelection(); return
         case '=': case '+': handled(); timeline.zoomBy(1.5); return
         case '-': case '_': handled(); timeline.zoomBy(1 / 1.5); return
@@ -1228,6 +1275,7 @@ window.__timeline = {
     audio,
     pool,
     renderer,
+    graphics,
     thumbs,
     model,
     edits,
@@ -1237,7 +1285,7 @@ window.__timeline = {
     // The command-line `check` and `snapshot` call these.
     async check() {
         const { checkProject } = await import('./automation.js')
-        return checkProject({ project: store.project, problems: store.problems, audio })
+        return checkProject({ project: store.project, problems: store.problems, audio, graphics })
     },
     async snapshot(options) {
         const { snapshotFrames } = await import('./automation.js')

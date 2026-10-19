@@ -9,6 +9,8 @@ import { transitionDsl } from './render/sequenceRenderer.js'
 import { getAudioBuffer } from './audio/media.js'
 import { PREROLL_SECONDS } from './export/exporter.js'
 import { formatTimecode } from './model/time.js'
+import { isGraphic } from './model/project.js'
+import { loadFont, fontError } from './render/fonts.js'
 
 function orderedSequences(project) {
     return project.sequenceOrder.map(id => project.sequences[id]).filter(Boolean)
@@ -16,10 +18,10 @@ function orderedSequences(project) {
 
 /**
  * Compile every program, transition and post chain once, load every media
- * file, and add the problems found when the project was read. `ok` is
- * false when anything cannot play as written.
+ * file and font, and add the problems found when the project was read.
+ * `ok` is false when anything cannot play as written.
  */
-export async function checkProject({ project, problems = [], audio }) {
+export async function checkProject({ project, problems = [], audio, graphics }) {
     const errors = problems.filter(p => p.level === 'error')
     const warnings = problems.filter(p => p.level !== 'error')
 
@@ -47,11 +49,39 @@ export async function checkProject({ project, problems = [], audio }) {
         await compiler.dispose()
     }
 
+    // Sound: every file an audio clip plays, and every audio file.
+    const heard = new Set()
+    for (const seq of orderedSequences(project)) for (const t of seq.audioTracks) for (const c of t.clips) heard.add(c.mediaId)
     for (const media of Object.values(project.media || {})) {
+        if (media.kind !== 'audio' && !heard.has(media.id)) continue
         try {
             await getAudioBuffer(media)
         } catch (err) {
             errors.push({ level: 'error', where: `media "${media.id}"`, message: err?.message || 'could not be loaded' })
+        }
+    }
+
+    // Pictures and words: every image and video loads, every font is on the font service.
+    const seen = new Set()
+    for (const seq of orderedSequences(project)) {
+        for (const track of seq.tracks) {
+            for (const clip of track.clips) {
+                if (!isGraphic(clip) || !graphics) continue
+                const where = `${seq.name} › ${track.name} › "${clip.name}" at ${formatTimecode(clip.start, seq.fps)}`
+                if (clip.type === 'text') {
+                    const key = `${clip.font}|${clip.weight}|${clip.italic}`
+                    if (seen.has(key)) continue
+                    seen.add(key)
+                    if (!(await loadFont(clip.font, clip.weight, clip.italic))) {
+                        warnings.push({ level: 'warning', where, message: `${fontError(clip.font, clip.weight, clip.italic) || `font ${clip.font} did not load`}; the text draws in a fallback face` })
+                    }
+                    continue
+                }
+                if (seen.has(clip.mediaId) || !project.media[clip.mediaId]) continue
+                seen.add(clip.mediaId)
+                const error = await graphics.prepare(clip, clip.offset || 0)
+                if (error) errors.push({ level: 'error', where, message: error })
+            }
         }
     }
 
