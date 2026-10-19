@@ -1,0 +1,15 @@
+{
+  "name": "noisefactor-timeline",
+  "owner": { "name": "Noise Factor LLC" },
+  "metadata": {
+    "description": "Timeline, the audio reactive video editor from Noise Factor, for coding agents"
+  },
+  "plugins": [
+    {
+      "name": "timeline",
+      "source": "./",
+      "description": "Make music videos and ads with Noise Factor Timeline from a project folder: check, snapshot and render it. Media stays on your computer.",
+      "version": "0.1.0"
+    }
+  ]
+}

@@ -1414,5 +1414,23 @@ window.__timeline = {
         const { snapshotFrames } = await import('./automation.js')
         return snapshotFrames({ project: store.project, renderer, pool, audio, ...options })
     },
+    // `render` keeps the finished file in memory; `readRender` hands it out in pieces.
+    renderState: {},
+    async render(options) {
+        const { renderVideo } = await import('./automation.js')
+        this.renderState = { phase: 'prepare', done: 0, total: 0 }
+        this.rendered = null
+        const result = await renderVideo({ project: store.project, renderer, pool, audio, state: this.renderState, ...options })
+        this.rendered = result.blob
+        this.renderState.phase = 'done'
+        const { blob, ...info } = result
+        return { ...info, size: blob.size }
+    },
+    async readRender(offset, length) {
+        const bytes = new Uint8Array(await this.rendered.slice(offset, offset + length).arrayBuffer())
+        let text = ''
+        for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+        return btoa(text)
+    },
 }
 window.dispatchEvent(new CustomEvent('timeline:ready'))

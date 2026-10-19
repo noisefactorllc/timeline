@@ -1,0 +1,8 @@
+{
+  "name": "timeline",
+  "version": "0.1.0",
+  "description": "Make music videos and ads with Noise Factor Timeline: assemble Noisemaker programs, audio, text, images and video on a timeline from a project folder, then check, snapshot and render it. Media stays on your computer.",
+  "author": { "name": "Noise Factor LLC" },
+  "homepage": "https://timeline.noisedeck.app",
+  "keywords": ["video", "music video", "timeline", "noisemaker", "shaders", "audio reactive"]
+}

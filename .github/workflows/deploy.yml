@@ -3,7 +3,7 @@ name: Deploy
 # Scaffold is the sole authority for timeline deploys. This workflow runs
 # the unit suite and a syntax check, then fires the workflow_dispatch at
 # scaffold's static-site-release, which clones this repo at the pushed SHA,
-# stages a clean tree (index.html + css/ + js/ + img/ + media/), writes
+# stages a clean tree (index.html + css/ + js/ + img/ + media/ + schema/), writes
 # deployment-meta.json, and publishes it to timeline.noisedeck.app.
 #
 # This repo carries no deploy secrets: only the EHSRE app private key,
@@ -19,6 +19,7 @@ on:
       - 'js/**'
       - 'img/**'
       - 'media/**'
+      - 'schema/**'
       - 'tests/unit/**'
       - 'package.json'
       - 'package-lock.json'

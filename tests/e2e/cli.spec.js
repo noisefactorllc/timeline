@@ -62,6 +62,15 @@ test('the command line checks a project folder and renders frames of it', async 
             expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([480, 270])
         }
 
+        const video = await run(['render', dir, '--url', url, '--to', '1', '--scale', '0.25', '--json'])
+        expect(video.status, video.stderr).toBe(0)
+        const rendered = JSON.parse(video.stdout)
+        expect(rendered.frames).toBe(30)
+        expect([rendered.width, rendered.height]).toEqual([480, 270])
+        const bytes = readFileSync(rendered.path)
+        expect(bytes.length).toBe(rendered.size)
+        expect(bytes.subarray(4, 8).toString()).toBe('ftyp')
+
         const missing = await run(['check', join(dir, 'nope'), '--url', url])
         expect(missing.status).toBe(1)
         expect(missing.stderr).toContain('project.json does not exist')

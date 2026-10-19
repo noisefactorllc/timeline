@@ -7,7 +7,8 @@
 import { ProgramRenderer } from './render/programRenderer.js'
 import { transitionDsl } from './render/sequenceRenderer.js'
 import { getAudioBuffer } from './audio/media.js'
-import { PREROLL_SECONDS } from './export/exporter.js'
+import { PREROLL_SECONDS, exportSequence } from './export/exporter.js'
+import { workRange } from './model/project.js'
 import { formatTimecode } from './model/time.js'
 import { isGraphic } from './model/project.js'
 import { loadFont, fontError } from './render/fonts.js'
@@ -103,6 +104,39 @@ export async function checkProject({ project, problems = [], audio, graphics }) 
         })),
         programs: programs.size,
     }
+}
+
+/**
+ * Render a sequence to a video file in memory, the way Export video does.
+ * Progress goes to `state` as it runs: { phase, done, total }.
+ *
+ * @param {object} o
+ * @param {string} [o.sequence] - id or name; the main sequence by default
+ * @param {number} [o.start] - seconds; the in point (or 0) by default
+ * @param {number} [o.end] - seconds; the out point (or the end) by default
+ * @param {number} [o.scale] - fraction of the sequence's size (default 1)
+ * @param {string} [o.format] - mp4 or webm
+ * @param {string} [o.quality] - medium, high or best
+ */
+export async function renderVideo({ project, renderer, pool, audio, state, sequence, start, end, scale = 1, format = 'mp4', quality = 'high', includeAudio = true }) {
+    const seq = Object.values(project.sequences).find(s => s.id === sequence || s.name === sequence)
+        || (sequence ? null : project.sequences[project.mainSequenceId])
+    if (!seq) throw new Error(`There is no sequence "${sequence}"`)
+    const range = workRange(seq)
+    const settings = {
+        format,
+        quality,
+        includeAudio,
+        width: Math.max(2, Math.round(seq.width * scale / 2) * 2),
+        height: Math.max(2, Math.round(seq.height * scale / 2) * 2),
+        start: Number.isFinite(start) ? start : range.start,
+        end: Number.isFinite(end) ? end : range.end,
+    }
+    const result = await exportSequence({
+        seq, project, renderer, pool, audio, settings,
+        onProgress: p => Object.assign(state, { phase: p.phase, done: p.done ?? state.done, total: p.total ?? state.total, message: p.message ?? state.message }),
+    })
+    return { ...result, sequence: seq.name, width: settings.width, height: settings.height, start: settings.start, end: settings.end }
 }
 
 /**

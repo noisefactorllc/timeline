@@ -4,6 +4,7 @@
 //
 //   timeline check <folder>                     compile every program, load every file
 //   timeline snapshot <folder> --at 4,1:12.5    PNG frames into <folder>/snapshots
+//   timeline render <folder>                    the video into <folder>/renders
 //
 // The app loads from timeline.noisedeck.app (or --url). Its requests for the
 // project's files are answered here from disk, inside Chrome, so the files
@@ -11,7 +12,7 @@
 // Chromium (set CHROME_PATH to use another build). No other dependencies.
 
 import { spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, mkdirSync, writeFileSync, openSync, writeSync, closeSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep, extname } from 'node:path'
@@ -28,13 +29,17 @@ const TYPES = {
 const USAGE = `Usage:
   timeline check <folder> [--url URL] [--json]
   timeline snapshot <folder> --at TIMES [--out DIR] [--sequence NAME] [--scale 0.5] [--url URL] [--json]
+  timeline render <folder> [--out FILE] [--from TIME] [--to TIME] [--sequence NAME] [--scale 0.5]
+                  [--format mp4|webm] [--quality medium|high|best] [--no-audio] [--url URL] [--json]
 
 TIMES is a comma-separated list of seconds or minutes:seconds, such as 4,12.5,1:04.
-Frames are written as PNG files to <folder>/snapshots unless --out names another folder.`
+Frames are written as PNG files to <folder>/snapshots unless --out names another folder.
+A render covers the sequence's in to out points (or all of it) unless --from and --to say otherwise,
+and is written to <folder>/renders/<sequence>.<format> unless --out names a file.`
 
 function parseArgs(argv) {
     const [command, folder, ...rest] = argv
-    const opts = { command, folder, url: DEFAULT_URL, json: false, scale: 1 }
+    const opts = { command, folder, url: DEFAULT_URL, json: false, scale: 1, format: 'mp4', quality: 'high', audio: true }
     for (let i = 0; i < rest.length; i++) {
         const arg = rest[i]
         const value = () => {
@@ -47,6 +52,11 @@ function parseArgs(argv) {
         else if (arg === '--out') opts.out = value()
         else if (arg === '--sequence') opts.sequence = value()
         else if (arg === '--scale') opts.scale = Number(value())
+        else if (arg === '--from') opts.from = parseTime(value())
+        else if (arg === '--to') opts.to = parseTime(value())
+        else if (arg === '--format') opts.format = value()
+        else if (arg === '--quality') opts.quality = value()
+        else if (arg === '--no-audio') opts.audio = false
         else throw new Error(`Unknown option ${arg}`)
     }
     return opts
@@ -277,6 +287,56 @@ async function snapshot(opts) {
     }
 }
 
+async function render(opts) {
+    if (!['mp4', 'webm'].includes(opts.format)) throw new Error('--format must be mp4 or webm')
+    if (!['medium', 'high', 'best'].includes(opts.quality)) throw new Error('--quality must be medium, high or best')
+    if (!(opts.scale > 0 && opts.scale <= 1)) throw new Error('--scale must be more than 0 and at most 1')
+    const { cdp, evaluate } = await openApp(opts)
+    try {
+        const options = JSON.stringify({
+            sequence: opts.sequence, start: opts.from, end: opts.to, scale: opts.scale,
+            format: opts.format, quality: opts.quality, includeAudio: opts.audio,
+        })
+        const started = Date.now()
+        let last = ''
+        const ticker = setInterval(async () => {
+            try {
+                const s = await evaluate('({ ...window.__timeline.renderState })')
+                const line = s.phase === 'render' || s.phase === 'preroll'
+                    ? `${s.phase === 'preroll' ? 'warming up' : 'rendering'} ${s.done} of ${s.total} frames`
+                    : s.phase === 'finalize' ? 'finishing the file' : s.message || s.phase || ''
+                if (line && line !== last && !opts.json) process.stderr.write(`${line}  (${Math.round((Date.now() - started) / 1000)} s)\n`)
+                last = line
+            } catch { /* the page is busy; ask again next tick */ }
+        }, 2000)
+        let info
+        try {
+            info = await evaluate(`window.__timeline.render(${options})`)
+        } finally {
+            clearInterval(ticker)
+        }
+        const slug = info.sequence.replace(/[^\p{L}\p{N}-]+/gu, '-').replace(/^-|-$/g, '') || 'sequence'
+        const out = resolve(opts.out || join(opts.folder, 'renders', `${slug}.${opts.format}`))
+        mkdirSync(join(out, '..'), { recursive: true })
+        const fd = openSync(out, 'w')
+        try {
+            const CHUNK = 4 * 1024 * 1024
+            for (let offset = 0; offset < info.size; offset += CHUNK) {
+                writeSync(fd, Buffer.from(await evaluate(`window.__timeline.readRender(${offset}, ${CHUNK})`), 'base64'))
+            }
+        } finally {
+            closeSync(fd)
+        }
+        const seconds = Math.round((Date.now() - started) / 100) / 10
+        const result = { path: out, size: info.size, frames: info.frames, width: info.width, height: info.height, start: info.start, end: info.end, videoCodec: info.videoCodec, audioCodec: info.audioCodec, seconds }
+        if (opts.json) console.log(JSON.stringify(result, null, 2))
+        else console.log(`${out}  ${info.frames} frames, ${info.width}x${info.height}, ${info.videoCodec}${info.audioCodec ? ` + ${info.audioCodec}` : ', no audio'}, ${(info.size / 1048576).toFixed(1)} MB in ${seconds} s`)
+        return 0
+    } finally {
+        await cdp.close()
+    }
+}
+
 async function main() {
     let opts
     try {
@@ -285,12 +345,12 @@ async function main() {
         console.error(`${err.message}\n\n${USAGE}`)
         return 2
     }
-    if (!['check', 'snapshot'].includes(opts.command) || !opts.folder) {
+    if (!['check', 'snapshot', 'render'].includes(opts.command) || !opts.folder) {
         console.error(USAGE)
         return 2
     }
     try {
-        return opts.command === 'check' ? await check(opts) : await snapshot(opts)
+        return opts.command === 'check' ? await check(opts) : opts.command === 'snapshot' ? await snapshot(opts) : await render(opts)
     } catch (err) {
         console.error(err?.message || err)
         return 1
