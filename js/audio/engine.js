@@ -15,7 +15,7 @@
  */
 
 import { AudioAnalyzer, applyFrame, silentFrame } from './analysis.js'
-import { getAudioBuffer, SAMPLE_RATE } from './media.js'
+import { getAudioBuffer, mediaKey, SAMPLE_RATE } from './media.js'
 import { clipEnd } from '../model/project.js'
 
 const SILENT = silentFrame()
@@ -27,7 +27,7 @@ function mixKey(project, seq) {
             id: t.id, n: t.name, m: t.muted, s: t.solo, g: t.gain,
             c: t.clips.map(c => [c.mediaId, c.start, c.duration, c.offset, c.gain, c.fadeIn, c.fadeOut]),
         })),
-        media: seq.audioTracks.flatMap(t => t.clips.map(c => project.media[c.mediaId]?.id || null)),
+        media: seq.audioTracks.flatMap(t => t.clips.map(c => mediaKey(project.media[c.mediaId]))),
     })
 }
 

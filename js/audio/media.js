@@ -2,9 +2,10 @@
  * Audio media: loading, decoding and waveform peaks.
  *
  * A media record in the project describes the source: imported files keep
- * their bytes in IndexedDB, and audio that ships with the app (the demo's
- * stems) is fetched from its URL. Decoded AudioBuffers are cached in
- * memory, resampled to 48 kHz.
+ * their bytes in IndexedDB, audio that ships with the app (the demo's
+ * stems) is fetched from its URL, and a project opened from a folder reads
+ * its files by path from that folder. Decoded AudioBuffers are cached in
+ * memory, resampled to 48 kHz, under a key that changes when the file does.
  */
 
 import { loadMedia, saveMedia } from '../storage/db.js'
@@ -16,6 +17,19 @@ export const SAMPLE_RATE = 48000
 const buffers = new Map()
 const pending = new Map()
 const peaksCache = new WeakMap()
+
+// The folder the open project reads its media from, if it has one.
+let source = null
+
+export function setMediaSource(next) {
+    source = next
+}
+
+/** Cache key for a media record; a file changed on disk gets a new key. */
+export function mediaKey(media) {
+    if (!media) return null
+    return media.path ? `${source?.token}:${media.path}@${source?.revOf(media.path) || ''}` : media.id
+}
 
 let decodeCtx = null
 function decoder() {
@@ -38,12 +52,19 @@ export function usesEarlierDemo(project) {
  */
 export function getAudioBuffer(media, { onProgress } = {}) {
     if (!media) return Promise.resolve(null)
-    if (buffers.has(media.id)) return Promise.resolve(buffers.get(media.id))
-    if (pending.has(media.id)) return pending.get(media.id)
+    const key = mediaKey(media)
+    if (buffers.has(key)) return Promise.resolve(buffers.get(key))
+    if (pending.has(key)) return pending.get(key)
     const job = (async () => {
         let buffer
         if (media.recipe) {
             throw new Error('This project uses the soundtrack of an earlier demo, which is no longer available')
+        } else if (media.path) {
+            if (!source) throw new Error(`Audio "${media.name}" is a file in a project folder, and no folder is open`)
+            const bytes = await source.readBytes(media.path, (fraction, received, total) => {
+                onProgress?.({ fraction: fraction * 0.9, received, total })
+            })
+            buffer = await decoder().decodeAudioData(bytes)
         } else if (media.url) {
             const bytes = await fetchBytes(new URL(media.url, document.baseURI), (fraction, received, total) => {
                 onProgress?.({ fraction: fraction * 0.9, received, total })
@@ -54,20 +75,24 @@ export function getAudioBuffer(media, { onProgress } = {}) {
             if (!record) throw new Error(`Audio "${media.name}" is missing from this browser's storage`)
             buffer = await decoder().decodeAudioData(record.bytes.slice(0))
         }
-        buffers.set(media.id, buffer)
+        buffers.set(mediaKey(media), buffer)
         onProgress?.({ fraction: 1 })
         return buffer
     })()
-    pending.set(media.id, job)
-    job.finally(() => pending.delete(media.id))
+    pending.set(key, job)
+    job.finally(() => pending.delete(key))
     return job
 }
 
-export function cachedAudioBuffer(mediaId) {
-    return buffers.get(mediaId) || null
+export function cachedAudioBuffer(media) {
+    return buffers.get(mediaKey(media)) || null
 }
 
-/** Import an audio file: store its bytes, decode it, return a media record. */
+/**
+ * Import an audio file and return a media record. A project from a folder
+ * gets a copy of the file in the folder; any other keeps the bytes in
+ * IndexedDB.
+ */
 export async function importAudioFile(file) {
     const bytes = await file.arrayBuffer()
     const buffer = await decoder().decodeAudioData(bytes.slice(0))
@@ -79,8 +104,9 @@ export async function importAudioFile(file) {
         duration: buffer.duration,
         size: bytes.byteLength,
     }
-    await saveMedia({ id: media.id, name: media.name, type: media.type, bytes })
-    buffers.set(media.id, buffer)
+    if (source?.writable) media.path = await source.importFile(file)
+    else await saveMedia({ id: media.id, name: media.name, type: media.type, bytes })
+    buffers.set(mediaKey(media), buffer)
     return media
 }
 

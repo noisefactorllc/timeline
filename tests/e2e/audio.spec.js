@@ -68,7 +68,7 @@ test('the demo soundtrack decodes from the stems that ship with the app', async 
         const { cachedAudioBuffer } = await import('/js/audio/media.js')
         const media = Object.values(window.__timeline.store.project.media)
         return media.map(m => {
-            const b = cachedAudioBuffer(m.id)
+            const b = cachedAudioBuffer(m)
             return { url: m.url, duration: b?.duration, rate: b?.sampleRate, channels: b?.numberOfChannels }
         })
     })

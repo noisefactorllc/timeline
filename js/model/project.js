@@ -20,7 +20,7 @@ export function uid(prefix = 'id') {
 }
 
 export const DEFAULT_PROGRAM_DSL = `search synth, filter
-noise(octaves: 3, ridges: true, colorMode: hsv)
+noise(octaves: 3, ridges: true, colorMode: rgb)
   .write(o0)
 render(o0)`
 

@@ -4,13 +4,16 @@
   "private": true,
   "description": "Timeline editor for Noisemaker DSL programs: tracks, transitions, a shared post chain and music-video export.",
   "type": "module",
+  "bin": {
+    "timeline": "cli/timeline.mjs"
+  },
   "author": "Noise Factor LLC",
   "license": "UNLICENSED",
   "scripts": {
     "dev": "node scripts/dev-server.mjs 3027",
     "test": "node --test 'tests/unit/**/*.test.js'",
     "test:e2e": "playwright test",
-    "lint": "find js -name '*.js' -print0 | xargs -0 -n1 node --check",
+    "lint": "find js cli \\( -name '*.js' -o -name '*.mjs' \\) -print0 | xargs -0 -n1 node --check",
     "vendor": "node scripts/vendor.mjs",
     "demo-audio": "node scripts/demo-track/render.mjs"
   },

@@ -594,7 +594,7 @@ export class TimelineView {
 
     _drawWave(g, clip, offsetPx, w, h) {
         const media = this.store.project.media[clip.mediaId]
-        const buffer = media ? cachedAudioBuffer(media.id) : null
+        const buffer = media ? cachedAudioBuffer(media) : null
         const styles = getComputedStyle(this.root)
         g.fillStyle = styles.getPropertyValue('--hf-green').trim() || '#4c8'
         if (!buffer) {

@@ -2,6 +2,9 @@
  * Application state: the open project, the active sequence, selection,
  * playhead and view settings, with undo history and debounced autosave.
  *
+ * A project saves to this browser's storage, or, when it was opened from a
+ * folder (`source`), back to that folder, and only after an edit here.
+ *
  * Components subscribe to topics:
  *   project    the document changed (re-render the timeline, inspector)
  *   selection  what is selected changed
@@ -18,6 +21,9 @@ import { clamp } from './model/time.js'
 export class Store {
     constructor() {
         this.project = null
+        this.source = null
+        this.problems = []
+        this._unsaved = false
         this.activeSeqId = null
         this.selection = { clips: new Set(), transition: null, marker: null, post: false, track: null }
         this.playheads = new Map()
@@ -63,14 +69,38 @@ export class Store {
 
     // --- project ---------------------------------------------------------
 
-    openProject(project) {
+    openProject(project, { source = null, problems = [] } = {}) {
+        this.source?.stop()
         this.project = project
+        this.source = source
+        this.problems = problems
+        this._unsaved = false
         this.activeSeqId = project.mainSequenceId
         this.playheads = new Map()
         this.history.clear()
         this.clearSelection(false)
-        writePrefs({ lastProjectId: project.id })
+        if (!source) writePrefs({ lastProjectId: project.id })
         this.emit('project', { reason: 'open' })
+        this.emit('selection')
+        this.emit('playhead')
+    }
+
+    /**
+     * Take a new version of the open project that changed outside this page
+     * (its folder was edited). The version it replaces stays in the undo
+     * history, so an unwanted change is one undo away.
+     */
+    replaceProject(project, { problems = [], label = 'Changes from disk' } = {}) {
+        this.history.push(this.project, label)
+        this.project = project
+        this.problems = problems
+        // The disk now holds this version; an edit not yet written is the undo step.
+        clearTimeout(this._saveTimer)
+        this._unsaved = false
+        this.saveState = 'saved'
+        if (!this.project.sequences[this.activeSeqId]) this.activeSeqId = this.project.mainSequenceId
+        this._pruneSelection()
+        this.emit('project', { reason: 'external' })
         this.emit('selection')
         this.emit('playhead')
     }
@@ -102,6 +132,7 @@ export class Store {
 
     _changed(reason = 'edit') {
         this.project.updatedAt = Date.now()
+        this._unsaved = true
         this._pruneSelection()
         this.emit('project', { reason })
         this.scheduleSave()
@@ -135,13 +166,19 @@ export class Store {
     async saveNow() {
         clearTimeout(this._saveTimer)
         if (!this.project) return
+        // A folder is written only when the project changed here, never just for opening it.
+        if (this.source && !this._unsaved) return
         const order = (this._saveOrder || 0) + 1
         this._saveOrder = order
+        this._unsaved = false
         try {
-            await saveProject(this.project)
+            // A folder that changed on disk is not overwritten; its watcher reloads it.
+            if (this.source) await this.source.save(this.project)
+            else await saveProject(this.project)
             if (this._saveOrder === order) this.saveState = 'saved'
         } catch (err) {
             console.warn('[timeline] save failed', err)
+            this._unsaved = true
             this.saveState = 'error'
         }
         this.emit('status')

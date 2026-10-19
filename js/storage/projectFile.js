@@ -1,7 +1,8 @@
 /**
  * Project files: a zip holding project.json and the bytes of every
  * imported audio file, so a project moves between browsers intact.
- * Audio that ships with the app travels as its URL. Media stay binary throughout.
+ * Audio that ships with the app travels as its URL, and files a project
+ * reads from its folder travel inside the zip. Media stay binary throughout.
  */
 
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate'
@@ -10,10 +11,15 @@ import { uid, SCHEMA_VERSION } from '../model/project.js'
 
 export const PROJECT_EXTENSION = 'timeline'
 
-export async function projectToFile(project) {
+/** `source` is the folder the project reads media from, when it has one. */
+export async function projectToFile(project, { source = null } = {}) {
     const files = { 'project.json': strToU8(JSON.stringify(project, null, 2)) }
     for (const media of Object.values(project.media || {})) {
         if (media.recipe || media.url) continue
+        if (media.path) {
+            if (source) files[`media/${media.id}`] = new Uint8Array(await source.readBytes(media.path))
+            continue
+        }
         const record = await loadMedia(media.id)
         if (record?.bytes) files[`media/${media.id}`] = new Uint8Array(record.bytes)
     }
@@ -37,6 +43,8 @@ export async function projectFromFile(file) {
         const data = files[`media/${media.id}`]
         if (data) {
             await saveMedia({ id: media.id, name: media.name, type: media.type || 'audio/*', bytes: data.slice().buffer })
+            // A file from a project folder now lives in this browser's storage.
+            delete media.path
         }
     }
     project.id = uid('prj')

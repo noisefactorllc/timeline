@@ -6,7 +6,7 @@
  */
 
 const DB_NAME = 'timeline'
-const DB_VERSION = 2
+const DB_VERSION = 3
 
 let dbPromise = null
 
@@ -23,6 +23,7 @@ function openDb() {
             if (!db.objectStoreNames.contains('projects')) db.createObjectStore('projects', { keyPath: 'id' })
             if (!db.objectStoreNames.contains('media')) db.createObjectStore('media', { keyPath: 'id' })
             if (!db.objectStoreNames.contains('thumbs')) db.createObjectStore('thumbs', { keyPath: 'key' })
+            if (!db.objectStoreNames.contains('handles')) db.createObjectStore('handles', { keyPath: 'key' })
         }
         req.onsuccess = () => {
             const db = req.result
@@ -82,6 +83,21 @@ export function saveMedia({ id, name, type, bytes }) {
 
 export function loadMedia(id) {
     return run('media', 'readonly', os => os.get(id))
+}
+
+// --- folder handles ---------------------------------------------------------
+
+/** Remember a project folder's handle so the next visit can reopen it. */
+export function saveFolderHandle(handle) {
+    return run('handles', 'readwrite', os => os.put({ key: 'lastFolder', handle, storedAt: Date.now() }))
+}
+
+export async function loadFolderHandle() {
+    return (await run('handles', 'readonly', os => os.get('lastFolder')))?.handle || null
+}
+
+export function forgetFolderHandle() {
+    return run('handles', 'readwrite', os => os.delete('lastFolder'))
 }
 
 // --- thumbnail cache --------------------------------------------------------

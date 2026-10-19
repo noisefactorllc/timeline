@@ -39,14 +39,16 @@ const MODULES = [
     './render/thumbnails.js', './ui/timeline.js', './ui/monitor.js', './ui/inspector.js', './ui/library.js',
     './ui/exportDialog.js', './ui/dialogs.js', './data/demoProject.js', './data/presets.js', './model/project.js',
     './model/edit.js', './model/time.js', './storage/db.js', './storage/projectFile.js', './export/exporter.js',
+    './storage/folder.js',
 ]
 let modulesLoaded = 0
 const [
-    { Store }, { AudioEngine }, { importAudioFile, getAudioBuffer, usesEarlierDemo }, { RendererPool },
+    { Store }, { AudioEngine }, { importAudioFile, getAudioBuffer, usesEarlierDemo, setMediaSource }, { RendererPool },
     { SequenceRenderer }, { Thumbnails }, { TimelineView }, { MonitorView }, { InspectorView }, { LibraryView },
     { ExportDialog }, { askText, askConfirm }, { createDemoProject }, { transitionPreset, postPreset, DEFAULT_TRANSITION },
-    model, edits, { frameAt, beatSeconds, barSeconds, clamp }, { loadProject, listProjects, readPrefs, writePrefs, saveProject },
-    { projectToFile, projectFromFile, PROJECT_EXTENSION }, { exportSequence },
+    model, edits, { frameAt, beatSeconds, barSeconds, clamp },
+    { loadProject, listProjects, readPrefs, writePrefs, saveProject, saveFolderHandle, loadFolderHandle },
+    { projectToFile, projectFromFile, PROJECT_EXTENSION }, { exportSequence }, { FolderSource, UrlSource },
 ] = await Promise.all(MODULES.map(path => import(path).then(module => {
     modulesLoaded++
     boot.progress('editor', modulesLoaded / MODULES.length, `${modulesLoaded} of ${MODULES.length} modules`)
@@ -64,6 +66,8 @@ let dirty = true
 let lastFrame = -1
 let lastSeqId = null
 let clipboard = null
+// A project folder from an earlier visit that File, Reopen last folder can open.
+let rememberedFolder = false
 
 // --- actions ---------------------------------------------------------------
 
@@ -530,13 +534,64 @@ const actions = {
         }
     },
 
-    async openProject(project) {
+    /** Open a project; `source` is the folder it lives in, when it has one. */
+    async openProject(project, { source = null, problems = [] } = {}) {
         actions.pause()
         await store.saveNow()
-        store.openProject(project)
-        await store.saveNow()
+        setMediaSource(source)
+        store.openProject(project, { source, problems })
+        if (!source) {
+            writePrefs({ lastFolder: false })
+            await store.saveNow()
+        }
+        watchFolder()
         await prepareAudio()
         dirty = true
+    },
+
+    async openFolder() {
+        if (!window.showDirectoryPicker) {
+            actions.status('Opening a folder needs a browser that can edit files on your computer, such as Chrome or Edge')
+            return
+        }
+        let handle
+        try {
+            handle = await window.showDirectoryPicker({ id: 'timeline-project', mode: 'readwrite' })
+        } catch (err) {
+            if (err?.name !== 'AbortError') actions.status(err?.message || 'Could not open the folder')
+            return
+        }
+        await actions.openFolderHandle(handle)
+    },
+
+    async reopenFolder() {
+        const handle = await loadFolderHandle().catch(() => null)
+        if (!handle) {
+            actions.status('There is no folder to reopen')
+            return
+        }
+        if (await handle.requestPermission({ mode: 'readwrite' }) !== 'granted') {
+            actions.status(`Timeline needs your permission to edit ${handle.name}`)
+            return
+        }
+        await actions.openFolderHandle(handle)
+    },
+
+    /** Open the project in a folder; an empty folder starts a new project there. */
+    async openFolderHandle(handle) {
+        const source = new FolderSource(handle)
+        try {
+            if (!(await source.hasProject())) await source.save(model.createProject({ name: handle.name }))
+            const { project, problems } = await source.load()
+            await actions.openProject(project, { source, problems })
+            writePrefs({ lastFolder: true })
+            rememberedFolder = true
+            try { await saveFolderHandle(handle) } catch { /* it opens now; it just will not reopen by itself */ }
+            menu.refresh?.()
+            actions.status(problemSummary(`Opened the folder ${handle.name}`, problems))
+        } catch (err) {
+            actions.status(err?.message || `Could not open ${handle.name}`)
+        }
     },
 
     async newProject() {
@@ -567,7 +622,7 @@ const actions = {
 
     async saveProjectFile() {
         await store.saveNow()
-        const file = await projectToFile(store.project)
+        const file = await projectToFile(store.project, { source: store.source })
         const url = URL.createObjectURL(file)
         const a = document.createElement('a')
         a.href = url
@@ -689,6 +744,9 @@ menu.config = {
                     { id: 'openRecent', label: 'Open project', onSelect: () => actions.openRecent() },
                     { id: 'openDemo', label: 'Open the demo', onSelect: () => actions.openDemo() },
                     { type: 'separator' },
+                    { id: 'openFolder', label: 'Open folder', onSelect: () => actions.openFolder() },
+                    { id: 'reopenFolder', label: 'Reopen last folder', disabled: () => !rememberedFolder || store.source?.kind === 'folder', onSelect: () => actions.reopenFolder() },
+                    { type: 'separator' },
                     { id: 'openFile', label: 'Open project file', onSelect: () => actions.openProjectFile() },
                     { id: 'saveFile', label: 'Save project file', shortcut: mod('S'), onSelect: () => actions.saveProjectFile() },
                     { type: 'separator' },
@@ -792,7 +850,8 @@ if (exportSlot) {
 
 function refreshChrome() {
     if (document.activeElement !== projectInput) projectInput.value = store.project?.name || ''
-    const states = { saved: 'Saved', pending: 'Saving', error: 'Not saved' }
+    const where = store.source?.kind === 'folder' ? ` in ${store.source.name}` : ''
+    const states = { saved: `Saved${where}`, pending: 'Saving', error: 'Not saved' }
     saveState.textContent = states[store.saveState] || ''
     saveState.dataset.state = store.saveState
     menu.refresh?.()
@@ -938,6 +997,37 @@ function resizePreview() {
     dirty = true
 }
 
+/** A status line naming how many problems a project has, and the first. */
+function problemSummary(prefix, problems) {
+    if (!problems.length) return prefix
+    const first = problems.find(p => p.level === 'error') || problems[0]
+    return `${prefix}, with ${problems.length} ${problems.length === 1 ? 'problem' : 'problems'}. ${first.where}: ${first.message}`
+}
+
+/**
+ * Follow the open project's folder: when another program changes
+ * project.json the editor shows the new version (one undo puts the old one
+ * back), and changed media files are decoded and mixed again.
+ */
+function watchFolder() {
+    const source = store.source
+    if (source?.kind !== 'folder') return
+    source.watch({
+        project: () => store.project,
+        onProject: async ({ project, problems }) => {
+            if (store.source !== source) return
+            store.replaceProject(project, { problems })
+            actions.status(problemSummary('The project changed on disk; Undo goes back', problems))
+        },
+        onMedia: async paths => {
+            if (store.source !== source) return
+            await prepareAudio()
+            actions.status(`${paths.join(', ')} changed on disk`)
+        },
+        onError: err => actions.status(err?.message || `Could not read ${source.name}`),
+    })
+}
+
 /**
  * Load and decode the sequence's audio, then mix it. `onProgress` receives
  * { fraction, received, total, files, mixing } while it works.
@@ -1043,12 +1133,47 @@ function frame(now) {
 initEscapeHandler()
 boot.start('project')
 let project = null
-try {
-    const last = prefs.lastProjectId ? await loadProject(prefs.lastProjectId) : null
-    // An earlier demo stays saved under Open project; the current demo opens instead.
-    project = last && !usesEarlierDemo(last) ? last : null
-} catch (err) {
-    console.warn('[timeline] could not read saved projects', err)
+let opened = {}
+let bootNote = ''
+const projectParam = new URLSearchParams(location.search).get('project')
+if (projectParam) {
+    // ?project=path/ opens the project folder at that path on this site (the command-line tools serve it).
+    try {
+        const source = new UrlSource(projectParam)
+        const result = await source.load()
+        project = result.project
+        opened = { source, problems: result.problems }
+    } catch (err) {
+        boot.fail(err?.message || 'Could not open the project')
+        throw err
+    }
+} else {
+    const handle = await loadFolderHandle().catch(() => null)
+    rememberedFolder = !!handle
+    if (handle && prefs.lastFolder) {
+        try {
+            if (await handle.queryPermission({ mode: 'readwrite' }) === 'granted') {
+                const source = new FolderSource(handle)
+                const result = await source.load()
+                project = result.project
+                opened = { source, problems: result.problems }
+                bootNote = problemSummary(`Opened the folder ${handle.name}`, result.problems)
+            } else {
+                bootNote = `To keep working in ${handle.name}, choose File, Reopen last folder`
+            }
+        } catch (err) {
+            bootNote = err?.message || `Could not open ${handle.name}`
+        }
+    }
+    if (!project) {
+        try {
+            const last = prefs.lastProjectId ? await loadProject(prefs.lastProjectId) : null
+            // An earlier demo stays saved under Open project; the current demo opens instead.
+            project = last && !usesEarlierDemo(last) ? last : null
+        } catch (err) {
+            console.warn('[timeline] could not read saved projects', err)
+        }
+    }
 }
 let firstVisit = false
 if (!project) {
@@ -1056,7 +1181,9 @@ if (!project) {
     firstVisit = true
     try { await saveProject(project) } catch { /* storage unavailable; the project still works */ }
 }
-store.openProject(project)
+setMediaSource(opened.source || null)
+store.openProject(project, opened)
+watchFolder()
 boot.done('project', project.name)
 if (firstVisit) {
     // Open the demo on its drop rather than on the fade from black.
@@ -1091,6 +1218,7 @@ initializeTooltips?.()
 app.dataset.state = 'ready'
 boot.finish()
 requestAnimationFrame(frame)
+if (bootNote) actions.status(bootNote)
 
 // Automation surface for the end-to-end suite and for scripting from the console.
 window.__timeline = {
@@ -1106,5 +1234,14 @@ window.__timeline = {
     exportSequence: (settings) => exportSequence({
         seq: store.seq, project: store.project, renderer, pool, audio, settings,
     }),
+    // The command-line `check` and `snapshot` call these.
+    async check() {
+        const { checkProject } = await import('./automation.js')
+        return checkProject({ project: store.project, problems: store.problems, audio })
+    },
+    async snapshot(options) {
+        const { snapshotFrames } = await import('./automation.js')
+        return snapshotFrames({ project: store.project, renderer, pool, audio, ...options })
+    },
 }
 window.dispatchEvent(new CustomEvent('timeline:ready'))
