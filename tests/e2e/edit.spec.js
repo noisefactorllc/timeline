@@ -78,11 +78,11 @@ test('dropping a transition from the library onto a cut adds it', async ({ page 
 
 test('dragging a program from the library onto V3 places a clip there', async ({ page }) => {
     await boot(page)
-    const card = page.locator('.tl-card', { hasText: 'Oil slick' }).first()
+    const card = page.locator('.tl-card', { hasText: 'blocko' }).first()
     const lane = page.locator('.tl-lane.is-video').first()
     await card.dragTo(lane, { targetPosition: { x: 300, y: 30 }, timeout: 120_000 })
     const v3 = await page.evaluate(() => window.__timeline.store.seq.tracks[2].clips.map(c => c.name))
-    expect(v3).toContain('Oil slick')
+    expect(v3).toContain('blocko')
 })
 
 test('the post chain can be switched off and its preset changed', async ({ page }) => {
