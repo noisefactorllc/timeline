@@ -33,28 +33,26 @@ try {
 }
 
 boot.start('editor')
-
-const { Store } = await import('./store.js')
-const { AudioEngine } = await import('./audio/engine.js')
-const { importAudioFile, getAudioBuffer, usesEarlierDemo } = await import('./audio/media.js')
-const { RendererPool } = await import('./render/pool.js')
-const { SequenceRenderer } = await import('./render/sequenceRenderer.js')
-const { Thumbnails } = await import('./render/thumbnails.js')
-const { TimelineView } = await import('./ui/timeline.js')
-const { MonitorView } = await import('./ui/monitor.js')
-const { InspectorView } = await import('./ui/inspector.js')
-const { LibraryView } = await import('./ui/library.js')
-const { ExportDialog } = await import('./ui/exportDialog.js')
-const { askText, askConfirm } = await import('./ui/dialogs.js')
-const { createDemoProject } = await import('./data/demoProject.js')
-const { transitionPreset, postPreset, DEFAULT_TRANSITION } = await import('./data/presets.js')
-const model = await import('./model/project.js')
-const edits = await import('./model/edit.js')
-const { frameAt, beatSeconds, barSeconds, clamp } = await import('./model/time.js')
-const { loadProject, listProjects, readPrefs, writePrefs, saveProject } = await import('./storage/db.js')
-const { projectToFile, projectFromFile, PROJECT_EXTENSION } = await import('./storage/projectFile.js')
-const { exportSequence } = await import('./export/exporter.js')
-boot.done('editor')
+// Load the editor's modules in parallel; one after another cost a round trip each.
+const MODULES = [
+    './store.js', './audio/engine.js', './audio/media.js', './render/pool.js', './render/sequenceRenderer.js',
+    './render/thumbnails.js', './ui/timeline.js', './ui/monitor.js', './ui/inspector.js', './ui/library.js',
+    './ui/exportDialog.js', './ui/dialogs.js', './data/demoProject.js', './data/presets.js', './model/project.js',
+    './model/edit.js', './model/time.js', './storage/db.js', './storage/projectFile.js', './export/exporter.js',
+]
+let modulesLoaded = 0
+const [
+    { Store }, { AudioEngine }, { importAudioFile, getAudioBuffer, usesEarlierDemo }, { RendererPool },
+    { SequenceRenderer }, { Thumbnails }, { TimelineView }, { MonitorView }, { InspectorView }, { LibraryView },
+    { ExportDialog }, { askText, askConfirm }, { createDemoProject }, { transitionPreset, postPreset, DEFAULT_TRANSITION },
+    model, edits, { frameAt, beatSeconds, barSeconds, clamp }, { loadProject, listProjects, readPrefs, writePrefs, saveProject },
+    { projectToFile, projectFromFile, PROJECT_EXTENSION }, { exportSequence },
+] = await Promise.all(MODULES.map(path => import(path).then(module => {
+    modulesLoaded++
+    boot.progress('editor', modulesLoaded / MODULES.length, `${modulesLoaded} of ${MODULES.length} modules`)
+    return module
+})))
+boot.done('editor', `${MODULES.length} modules`)
 
 const store = new Store()
 const audio = new AudioEngine({ AudioState: engine.AudioState })
