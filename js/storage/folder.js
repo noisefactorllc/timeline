@@ -204,13 +204,13 @@ export class FolderSource {
 }
 
 export class UrlSource {
-    /** `base` is a folder path on this site, such as `local-project/`. */
-    constructor(base) {
+    /** `base` is a folder path on this site, such as `local-project/`; `name` names the project when it has none. */
+    constructor(base, { name = null } = {}) {
         const url = new URL(base.endsWith('/') ? base : `${base}/`, document.baseURI)
         if (url.origin !== location.origin) throw new Error('A project path must be on this site')
         this.kind = 'url'
         this.base = url
-        this.name = decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() || 'project')
+        this.name = name || decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() || 'project')
         this.token = uid('src')
         this.writable = false
         this.revs = new Map()

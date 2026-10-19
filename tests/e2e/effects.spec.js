@@ -11,13 +11,18 @@ const DEFINITION = {
 
 test('a Noisedeck effect zip imports, and a program reaches it with search user', async ({ page }) => {
     const errors = await boot(page)
-    const result = await page.evaluate(async ({ definition, glsl }) => {
+    await page.evaluate(async ({ definition, glsl }) => {
         const tl = window.__timeline
         await tl.actions.newProject()
         tl.store.edit('plain', s => { s.post.enabled = false })
         const { zipSync, strToU8 } = await import('fflate')
         const zip = zipSync({ 'flipTone/definition.json': strToU8(JSON.stringify(definition)), 'flipTone/glsl/flip.glsl': strToU8(glsl) })
         await tl.actions.handleFiles([new File([zip], 'flipTone.zip', { type: 'application/zip' })])
+    }, { definition: DEFINITION, glsl: GLSL })
+    // The notice is brief, so look for it before doing anything else.
+    await expect(page.getByText('Added the effect flipTone. A program uses it with search user, then .flipTone()')).toBeVisible()
+    const result = await page.evaluate(async () => {
+        const tl = window.__timeline
         // A red frame beneath, and a program above that flips it.
         const c = new OffscreenCanvas(16, 16)
         const g = c.getContext('2d')
@@ -36,13 +41,12 @@ test('a Noisedeck effect zip imports, and a program reaches it with search user'
         canvas.getContext('2d').drawImage(bitmap, 0, 0)
         const pixel = [...canvas.getContext('2d').getImageData(10, 10, 1, 1).data.slice(0, 3)]
         return { effects: Object.keys(tl.store.project.effects || {}), pixel, check: await tl.check() }
-    }, { definition: DEFINITION, glsl: GLSL })
+    })
     expect(result.effects).toEqual(['flipTone'])
     expect(result.pixel[0]).toBeLessThan(40)
     expect(result.pixel[1]).toBeGreaterThan(200)
     expect(result.pixel[2]).toBeGreaterThan(200)
     expect(result.check.errors).toEqual([])
-    await expect(page.getByText('Added the effect flipTone. A program uses it with search user, then .flipTone()')).toBeVisible()
     expect(errors).toEqual([])
 })
 

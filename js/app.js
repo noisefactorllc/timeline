@@ -1304,11 +1304,12 @@ boot.start('project')
 let project = null
 let opened = {}
 let bootNote = ''
-const projectParam = new URLSearchParams(location.search).get('project')
+const bootParams = new URLSearchParams(location.search)
+const projectParam = bootParams.get('project')
 if (projectParam) {
     // ?project=path/ opens the project folder at that path on this site (the command-line tools serve it).
     try {
-        const source = new UrlSource(projectParam)
+        const source = new UrlSource(projectParam, { name: bootParams.get('name') })
         const result = await source.load()
         project = result.project
         opened = { source, problems: result.problems }

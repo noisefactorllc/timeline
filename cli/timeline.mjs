@@ -15,7 +15,7 @@ import { spawn } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync, mkdirSync, writeFileSync, openSync, writeSync, closeSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve, sep, extname } from 'node:path'
+import { join, resolve, sep, extname, basename } from 'node:path'
 
 const DEFAULT_URL = 'https://timeline.noisedeck.app/'
 const PROJECT_PREFIX = '__project__/'
@@ -205,7 +205,9 @@ async function openApp(opts) {
         await cdp.send('Runtime.enable', {}, sessionId)
         await serveFolder(cdp, sessionId, opts.folder, base)
         await cdp.send('Page.enable', {}, sessionId)
-        await cdp.send('Page.navigate', { url: new URL(`?project=${PROJECT_PREFIX}`, base).href }, sessionId)
+        // The folder's name names a project that has none of its own.
+        const name = encodeURIComponent(basename(resolve(opts.folder)))
+        await cdp.send('Page.navigate', { url: new URL(`?project=${PROJECT_PREFIX}&name=${name}`, base).href }, sessionId)
         const evaluate = async expression => {
             const { result, exceptionDetails } = await cdp.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId)
             if (exceptionDetails) throw new Error(exceptionDetails.exception?.description || exceptionDetails.text)

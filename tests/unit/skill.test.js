@@ -28,3 +28,11 @@ test('the example effect definition is a portable effect with a pass per program
     for (const pass of definition.passes) assert.equal(typeof pass.program, 'string')
     assert.equal(definition.globals.amount.uniform, 'amount')
 })
+
+test('the example project in the README opens with no problems', () => {
+    const readme = readFileSync(new URL('../../README.md', import.meta.url), 'utf8')
+    const [example] = [...readme.matchAll(/```json\n([\s\S]*?)```/g)].map(m => m[1])
+    const { problems } = normalizeProject(JSON.parse(example))
+    assert.deepEqual(problems, [])
+    assert.ok(!/[\u2014]/.test(readme), 'no em dashes')
+})
