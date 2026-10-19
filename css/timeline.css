@@ -1238,6 +1238,20 @@ button {
         color-mix(in oklab, var(--tint) 24%, var(--hf-bg-elevated));
 }
 
+/* A key on a clip: a small diamond on its bottom edge. */
+.tl-clip-key {
+    position: absolute;
+    bottom: 3px;
+    width: 7px;
+    height: 7px;
+    margin-left: -3.5px;
+    rotate: 45deg;
+    background: var(--hf-yellow);
+    box-shadow: 0 0 0 1px var(--hf-bg-base);
+    pointer-events: none;
+    z-index: 1;
+}
+
 /* Graphics sit over the tracks beneath, so their lanes read as see-through. */
 .tl-clip.is-text {
     --tint: var(--hf-text-bright);
@@ -1589,6 +1603,50 @@ button {
 .tl-field input[type="color"] {
     padding: 2px;
     cursor: pointer;
+}
+
+/* A keyable number: the field and a diamond that keys it at the playhead. */
+.tl-keyed {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px;
+    align-items: center;
+}
+
+.tl-key {
+    display: inline-grid;
+    place-items: center;
+    width: 22px;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--hf-radius-sm);
+    background: none;
+    color: var(--hf-text-muted);
+    cursor: pointer;
+}
+
+.tl-key .hf-icon {
+    font-size: 15px;
+    color: inherit;
+}
+
+.tl-key.has-keys {
+    color: var(--hf-text-dim);
+}
+
+.tl-key[aria-pressed="true"] {
+    color: var(--hf-yellow);
+}
+
+.tl-key:hover {
+    color: var(--hf-text-bright);
+    background: var(--hf-bg-elevated);
+}
+
+.tl-key:focus-visible {
+    outline: var(--hf-focus-ring-width) solid var(--hf-focus-ring-color);
+    outline-offset: -1px;
 }
 
 .tl-textarea {

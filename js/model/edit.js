@@ -14,6 +14,32 @@ import {
     createTrack, createAudioTrack,
 } from './project.js'
 import { transitionSpan, maxTransitionDuration, ADJACENT_EPS } from './evaluate.js'
+import { keyValue } from './automation.js'
+
+/** Move a clip's keys by `delta` seconds, so they stay put in sequence time when its start moves. */
+function shiftKeys(clip, delta) {
+    if (!clip.keys || !delta) return
+    for (const keys of Object.values(clip.keys)) for (const k of keys) k.t += delta
+}
+
+/**
+ * Keys for the two halves of a clip split `at` seconds into it: each half
+ * keeps its own keys, plus a key at the cut holding the value there, so
+ * nothing jumps.
+ */
+function splitKeys(clip, right, at) {
+    if (!clip.keys) return
+    const left = {}
+    const after = {}
+    for (const [prop, keys] of Object.entries(clip.keys)) {
+        const v = keyValue(keys, at, keys[0].v)
+        const ease = keys.find(k => k.t > at)?.ease
+        left[prop] = [...keys.filter(k => k.t < at), { t: at, v, ...(ease ? { ease } : {}) }]
+        after[prop] = [{ t: 0, v }, ...keys.filter(k => k.t > at).map(k => ({ ...k, t: k.t - at }))]
+    }
+    clip.keys = left
+    right.keys = after
+}
 
 const MIN_CLIP = 1 / 120
 
@@ -57,6 +83,10 @@ export function carve(track, start, end, keep = new Set()) {
                 duration: cEnd - end,
                 offset: clip.offset + (end - clip.start),
             })
+            // The right piece keeps the keys from `end` on, measured from its own start.
+            const tail = cloneClip(clip)
+            splitKeys(tail, right, end - clip.start)
+            splitKeys(clip, tail, start - clip.start)
             clip.duration = start - clip.start
             for (const tr of track.transitions || []) {
                 if (tr.from === clip.id) tr.from = right.id
@@ -69,6 +99,7 @@ export function carve(track, start, end, keep = new Set()) {
             return true
         }
         const cut = end - clip.start
+        shiftKeys(clip, -cut)
         clip.start = end
         clip.offset += cut
         clip.duration = cEnd - end
@@ -166,6 +197,7 @@ export function trimClip(seq, clipId, edge, time, limits = {}) {
         }
         clip.offset += start - clip.start
         clip.duration = end - start
+        shiftKeys(clip, clip.start - start)
         clip.start = start
     } else {
         let newEnd = Math.max(time, clip.start + MIN_CLIP)
@@ -187,6 +219,7 @@ export function splitClip(seq, clipId, t) {
         duration: clipEnd(clip) - t,
         offset: clip.offset + (t - clip.start),
     })
+    splitKeys(clip, right, t - clip.start)
     clip.duration = t - clip.start
     for (const tr of track.transitions || []) {
         if (tr.from === clip.id) tr.from = right.id

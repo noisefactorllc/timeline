@@ -17,6 +17,7 @@ import {
 } from './project.js'
 import { POST_PRESETS } from '../data/presets.js'
 import { isEaseName } from './ease.js'
+import { KEYABLE, DUCK_DEFAULTS, DUCK_DETECT } from './automation.js'
 
 /** File extensions Timeline reads, with their kind and MIME type. A .webm is taken as video; its sound still plays from an audio clip. */
 export const MEDIA_TYPES = {
@@ -212,9 +213,10 @@ function normalizeSequence(seqId, s, media, report) {
                 gain: isNumber(c.gain) && c.gain >= 0 ? c.gain : 1,
                 fadeIn: isNumber(c.fadeIn) && c.fadeIn >= 0 ? c.fadeIn : 0,
                 fadeOut: isNumber(c.fadeOut) && c.fadeOut >= 0 ? c.fadeOut : 0,
+                ...normalizeKeys(c.keys, KEYABLE.audio, clipWhere, report),
             }
         }).filter(Boolean)
-        return {
+        const normalized = {
             ...track,
             id,
             name: trackName,
@@ -223,7 +225,20 @@ function normalizeSequence(seqId, s, media, report) {
             gain: isNumber(track.gain) && track.gain >= 0 ? track.gain : 1,
             clips: clips.sort((a, b) => a.start - b.start),
         }
+        if (track.duck !== undefined && track.duck !== null) normalized.duck = normalizeDuck(track.duck, where, report)
+        if (!normalized.duck) delete normalized.duck
+        return normalized
     })
+    // A duck must name another audio track of this sequence.
+    for (const track of seq.audioTracks) {
+        if (!track.duck) continue
+        const under = track.duck.under
+        const trigger = seq.audioTracks.find(t => t !== track && (t.id === under || t.name === under))
+        if (!trigger) {
+            report('error', `${name} › ${track.name}`, `duck.under "${under}" names no other audio track; it does not duck`)
+            delete track.duck
+        }
+    }
 
     seq.markers = (Array.isArray(s.markers) ? s.markers : []).filter(m => isObject(m) && isNumber(m.time)).map((m, i) => ({
         ...m, id: m.id || `${seqId}/marker-${i + 1}`, name: m.name || `Marker ${i + 1}`,
@@ -266,6 +281,7 @@ function normalizeVisualClip(c, defaultId, where, media, report) {
     if (c.blend !== undefined && blend !== c.blend) report('warning', label, `blend "${c.blend}" is not a blend mode; it blends normally`)
     const clip = {
         ...c,
+        ...normalizeKeys(c.keys, KEYABLE.visual, label, report),
         id: c.id || defaultId,
         type,
         name: c.name || (type === 'sequence' ? c.sequenceId : type === 'program' ? 'Program' : type === 'text' ? String(c.text ?? 'Text').split('\n')[0].slice(0, 40) : media[c.mediaId]?.name || type),
@@ -377,6 +393,59 @@ function checkTransitions(seq, report) {
             return true
         })
     }
+}
+
+/** Keys on a clip: known properties only, each a time-ordered list of { t, v, ease }. */
+function normalizeKeys(raw, allowed, where, report) {
+    if (raw === undefined || raw === null) return { keys: undefined }
+    if (!isObject(raw)) {
+        report('warning', where, '"keys" must be an object of properties, each a list of { t, v }; they were left out')
+        return { keys: undefined }
+    }
+    const keys = {}
+    for (const [prop, list] of Object.entries(raw)) {
+        if (!allowed.includes(prop)) {
+            report('warning', where, `"${prop}" cannot take keys; keyable here: ${allowed.join(', ')}`)
+            continue
+        }
+        if (!Array.isArray(list)) {
+            report('warning', where, `keys.${prop} must be a list of { t, v }`)
+            continue
+        }
+        const good = []
+        for (const k of list) {
+            if (!isObject(k) || !isNumber(k.t) || !isNumber(k.v)) {
+                report('warning', where, `a key in keys.${prop} needs a number "t" (seconds from the clip's start) and a number "v"; it was left out`)
+                continue
+            }
+            const key = { t: k.t, v: k.v }
+            if (k.ease !== undefined) {
+                if (isEaseName(k.ease)) key.ease = k.ease
+                else report('warning', where, `keys.${prop} at ${k.t} s: ease "${k.ease}" is not an ease such as power2.inOut; it uses power2.inOut`)
+            }
+            good.push(key)
+        }
+        if (good.length) keys[prop] = good.sort((a, b) => a.t - b.t)
+    }
+    return { keys: Object.keys(keys).length ? keys : undefined }
+}
+
+function normalizeDuck(raw, where, report) {
+    if (!isObject(raw) || typeof raw.under !== 'string' || !raw.under) {
+        report('error', where, '"duck" needs "under", the name or id of the audio track to duck under; it does not duck')
+        return null
+    }
+    const duck = { under: raw.under }
+    for (const [key, fallback] of Object.entries(DUCK_DEFAULTS)) {
+        const v = raw[key]
+        const decibels = key === 'depth' || key === 'threshold'
+        const valid = isNumber(v) && (decibels ? v <= 0 : v >= 0)
+        if (v !== undefined && !valid) report('warning', where, `duck.${key} must be ${decibels ? 'a number of dB, 0 or less' : 'seconds, 0 or more'}; it uses ${fallback}`)
+        duck[key] = valid ? v : fallback
+    }
+    duck.detect = DUCK_DETECT.includes(raw.detect) ? raw.detect : 'signal'
+    if (raw.detect !== undefined && raw.detect !== duck.detect) report('warning', where, `duck.detect must be ${DUCK_DETECT.join(' or ')}; it uses signal`)
+    return duck
 }
 
 function positiveInt(v, fallback) {

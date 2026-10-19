@@ -691,6 +691,45 @@ const actions = {
         exportDialog.open()
     },
 
+    /** Save the mix of the in-to-out range as a WAV file, to approve the sound before rendering. */
+    async exportAudio() {
+        const seq = store.seq
+        const { start, end } = model.workRange(seq)
+        const name = `${(seq.name || 'mix').replace(/[^\p{L}\p{N}\- ]+/gu, '').trim() || 'mix'}.wav`
+        let handle = null
+        if (window.showSaveFilePicker) {
+            try {
+                handle = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: 'WAV audio', accept: { 'audio/wav': ['.wav'] } }] })
+            } catch (err) {
+                if (err?.name === 'AbortError') return
+            }
+        }
+        try {
+            actions.status('Mixing the audio')
+            await audio.mix(store.project, seq)
+            const { encodeWav } = await import('./audio/wav.js')
+            const wav = encodeWav(audio.exportBuffer(seq, start, end))
+            if (handle) {
+                const writable = await handle.createWritable()
+                await writable.write(wav)
+                await writable.close()
+                actions.status(`Saved ${handle.name} (${formatBytes(wav.size)}) to the folder you chose`)
+                return
+            }
+            const url = URL.createObjectURL(wav)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = name
+            document.body.append(a)
+            a.click()
+            a.remove()
+            setTimeout(() => URL.revokeObjectURL(url), 60_000)
+            actions.status(`Your browser is saving ${name} (${formatBytes(wav.size)}) to your downloads`)
+        } catch (err) {
+            actions.status(`Could not export the audio: ${err?.message || err}`)
+        }
+    },
+
     toggleFullscreen() {
         const stage = document.querySelector('.tl-stage')
         if (document.fullscreenElement) document.exitFullscreen()
@@ -797,6 +836,7 @@ menu.config = {
                     { type: 'separator' },
                     { id: 'importMedia', label: 'Import audio, images or video', onSelect: () => actions.importMedia() },
                     { id: 'exportVideo', label: 'Export video', shortcut: mod('E'), onSelect: () => actions.exportVideo() },
+                    { id: 'exportAudio', label: 'Export audio', onSelect: () => actions.exportAudio() },
                 ],
             },
             {

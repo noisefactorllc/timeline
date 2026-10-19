@@ -16,6 +16,7 @@
 
 import { activeLayers, upcoming } from '../model/evaluate.js'
 import { isGraphic } from '../model/project.js'
+import { keyValue } from '../model/automation.js'
 import { loopPhase } from '../model/time.js'
 import { transitionPreset } from '../data/presets.js'
 
@@ -42,6 +43,24 @@ const COMPOSITE_OPS = {
 }
 
 const ease = x => (1 - Math.cos(Math.PI * Math.max(0, Math.min(1, x)))) / 2
+
+/**
+ * A clip's opacity and, for a program or nested sequence, its placement at
+ * a local time: its own values or its keys. Graphics place themselves.
+ */
+function layerOf(clip, localTime, canvas, fade = 1) {
+    const t = localTime - (clip.offset || 0)
+    const keys = clip.keys || {}
+    const layer = { canvas, opacity: keyValue(keys.opacity, t, clip.opacity ?? 1) * fade, blend: clip.blend }
+    if (!isGraphic(clip)) {
+        const x = keyValue(keys.x, t, clip.x ?? 0.5)
+        const y = keyValue(keys.y, t, clip.y ?? 0.5)
+        const scale = keyValue(keys.scale, t, clip.scale ?? 1)
+        const rotation = keyValue(keys.rotation, t, clip.rotation ?? 0)
+        if (x !== 0.5 || y !== 0.5 || scale !== 1 || rotation !== 0) layer.transform = { x, y, scale, rotation }
+    }
+    return layer
+}
 
 export function transitionDsl(transition) {
     return transition.dsl && transition.dsl.trim() ? transition.dsl : transitionPreset(transition.preset).dsl
@@ -193,11 +212,22 @@ export class SequenceRenderer {
         g.globalAlpha = 1
         g.fillStyle = '#000'
         g.fillRect(0, 0, comp.canvas.width, comp.canvas.height)
+        const { width: W, height: H } = comp.canvas
         for (const layer of drawn) {
             if (layer.opacity <= 0) continue
             g.globalAlpha = Math.min(1, layer.opacity)
             g.globalCompositeOperation = COMPOSITE_OPS[layer.blend] || 'source-over'
-            g.drawImage(layer.canvas, 0, 0, comp.canvas.width, comp.canvas.height)
+            const tf = layer.transform
+            if (!tf) {
+                g.drawImage(layer.canvas, 0, 0, W, H)
+                continue
+            }
+            g.save()
+            g.translate(tf.x * W, tf.y * H)
+            g.rotate((tf.rotation * Math.PI) / 180)
+            g.scale(tf.scale, tf.scale)
+            g.drawImage(layer.canvas, -W / 2, -H / 2, W, H)
+            g.restore()
         }
         g.globalAlpha = 1
         g.globalCompositeOperation = 'source-over'
@@ -212,7 +242,7 @@ export class SequenceRenderer {
         for (const layer of layers) {
             if (layer.kind === 'clip') {
                 const src = this._clipSource(layer.clip, layer.localTime, path, depth, ctx, seq, belowFor(layer.clip.id))
-                if (src) drawn.push({ canvas: src, opacity: layer.clip.opacity ?? 1, blend: layer.clip.blend })
+                if (src) drawn.push(layerOf(layer.clip, layer.localTime, src))
                 continue
             }
             const { transition, progress, a, b } = layer
@@ -220,7 +250,7 @@ export class SequenceRenderer {
                 const side = a || b
                 const src = this._clipSource(side.clip, side.localTime, path, depth, ctx, seq, belowFor(side.clip.id))
                 const fade = a ? 1 - ease(progress) : ease(progress)
-                if (src) drawn.push({ canvas: src, opacity: (side.clip.opacity ?? 1) * fade, blend: side.clip.blend })
+                if (src) drawn.push(layerOf(side.clip, side.localTime, src, fade))
                 continue
             }
             const opacity = (a.clip.opacity ?? 1) * (1 - progress) + (b.clip.opacity ?? 1) * progress
@@ -229,8 +259,8 @@ export class SequenceRenderer {
                 // Graphics are see-through, so they cross-fade over the tracks beneath instead of mixing to an opaque frame.
                 const srcA = this._clipSource(a.clip, a.localTime, path, depth, ctx, seq, belowFor(a.clip.id))
                 const srcB = this._clipSource(b.clip, b.localTime, path, depth, ctx, seq, belowFor(b.clip.id))
-                if (srcA) drawn.push({ canvas: srcA, opacity: (a.clip.opacity ?? 1) * (1 - ease(progress)), blend: a.clip.blend })
-                if (srcB) drawn.push({ canvas: srcB, opacity: (b.clip.opacity ?? 1) * ease(progress), blend: b.clip.blend })
+                if (srcA) drawn.push(layerOf(a.clip, a.localTime, srcA, 1 - ease(progress)))
+                if (srcB) drawn.push(layerOf(b.clip, b.localTime, srcB, ease(progress)))
                 continue
             }
             const srcA = this._clipSource(a.clip, a.localTime, path, depth, ctx, seq, belowFor(a.clip.id)) || (ctx.mode === 'render' ? this._black() : null)

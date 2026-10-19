@@ -12,6 +12,7 @@
 import { dslTokenizer } from 'handfish'
 import { findClip, findTransition, BLEND_MODES, FIT_MODES, MOTION_PRESETS, TEXT_ALIGN } from '../model/project.js'
 import { EASE_NAMES, EASE_DIRECTIONS } from '../model/ease.js'
+import { keyValue, keyAt, setKey, removeKey, keyTimes, DUCK_DEFAULTS, DEFAULT_KEY_EASE, gainToDb, dbToGain } from '../model/automation.js'
 import { loadFontCatalog, fontCatalog } from '../render/fonts.js'
 import { formatTimecode, parseTime, barSeconds, beatSeconds } from '../model/time.js'
 import { transitionSpan, maxTransitionDuration } from '../model/evaluate.js'
@@ -78,6 +79,11 @@ export class InspectorView {
         this._dslTimer = null
         store.on('selection', () => this.update())
         store.on('project', () => this.update())
+        // Keyed values follow the playhead.
+        store.on('playhead', () => {
+            const target = this._target()
+            if (target.clip?.keys && target.key === this.targetKey) this._refresh(target)
+        })
         pool.compiledListeners.add((entry, result) => this._onCompiled(entry, result))
         this.update()
     }
@@ -98,7 +104,11 @@ export class InspectorView {
         if (sel.clips.size > 1) return { key: `multi:${[...sel.clips].sort().join(',')}`, kind: 'multi', ids: [...sel.clips] }
         if (sel.clips.size === 1) {
             const found = findClip(seq, [...sel.clips][0])
-            if (found) return { ...found, key: `clip:${found.clip.id}`, kind: found.kind === 'audio' ? 'audio' : found.clip.type }
+            if (found) {
+                // Gaining keys or ducking changes the panel, so it is part of the key.
+                const extras = `${found.clip.keys ? ':keys' : ''}${found.kind === 'audio' && found.track.duck ? ':duck' : ''}`
+                return { ...found, key: `clip:${found.clip.id}${extras}`, kind: found.kind === 'audio' ? 'audio' : found.clip.type }
+            }
         }
         return { key: `sequence:${seq.id}`, kind: 'sequence', seq }
     }
@@ -400,12 +410,9 @@ export class InspectorView {
                 this._timeField('Program time at start', get('offset'), t => this._editClip(id, 'Change clip offset', c => { c.offset = t })),
                 ...this._loopField(clip),
             )),
-            this._section('Composite', this._grid(
-                this._rangeField('Opacity', () => Math.round((findClip(this.store.seq, id)?.clip.opacity ?? 1) * 100),
-                    (v, co) => this._editClip(id, 'Change opacity', c => { c.opacity = v / 100 }, co), { coalesce: `opacity:${id}` }),
-                this._selectField('Blend', BLEND_MODES.map(m => [m, m]), () => findClip(this.store.seq, id)?.clip.blend || 'normal',
-                    v => this._editClip(id, 'Change blend mode', c => { c.blend = v })),
-            )),
+            this._compositeSection(id),
+            this._placementSection(id),
+            this._keysSection(id),
         )
         return head
     }
@@ -447,10 +454,98 @@ export class InspectorView {
         return this._field('Font', select)
     }
 
+    // --- keys -------------------------------------------------------------------------------
+
+    _easeOptions() {
+        return [['none', 'none'], ...EASE_NAMES.filter(n => n !== 'none').flatMap(n => EASE_DIRECTIONS.map(d => [`${n}.${d}`, `${n}.${d}`]))]
+    }
+
+    /** Seconds into a clip at the playhead, kept inside the clip. */
+    _clipTime(clip) {
+        return Math.max(0, Math.min(clip.duration, this.store.playhead - clip.start))
+    }
+
+    _halfFrame() {
+        return 0.5 / (this.store.seq?.fps || 30)
+    }
+
+    /**
+     * A number for a property that can take keys. Without keys it edits the
+     * clip's own value; with keys it shows and sets the value at the
+     * playhead. Its diamond adds or removes a key at the playhead.
+     */
+    _keyedField(label, id, prop, { fallback = 0, toDisplay = v => v, fromDisplay = v => v, step = 1, min = null, max = null, digits = 2 } = {}) {
+        const clipNow = () => findClip(this.store.seq, id)?.clip
+        const valueNow = c => keyValue(c.keys?.[prop], this._clipTime(c), c[prop] ?? fallback)
+        const input = el('input', '', { type: 'number', step: String(step), min: min ?? undefined, max: max ?? undefined })
+        const diamond = el('button', 'tl-key', { type: 'button', 'aria-label': `Key ${label.toLowerCase()} at the playhead`, title: `Add or remove a ${label.toLowerCase()} key at the playhead`, 'aria-pressed': 'false' })
+        diamond.append(icon('diamond'))
+        const show = () => {
+            const c = clipNow()
+            if (!c) return
+            input.value = String(Number(toDisplay(valueNow(c)).toFixed(digits)))
+            diamond.setAttribute('aria-pressed', String(!!keyAt(c, prop, this._clipTime(c), this._halfFrame())))
+            diamond.classList.toggle('has-keys', !!c.keys?.[prop])
+        }
+        show()
+        input.addEventListener('change', () => {
+            let v = Number(input.value)
+            if (!Number.isFinite(v)) return show()
+            if (min !== null) v = Math.max(min, v)
+            if (max !== null) v = Math.min(max, v)
+            v = fromDisplay(v)
+            this._editClip(id, `Change ${label.toLowerCase()}`, c => {
+                if (c.keys?.[prop]) setKey(c, prop, this._clipTime(c), v, { tolerance: this._halfFrame() })
+                else c[prop] = v
+            })
+        })
+        diamond.addEventListener('click', () => {
+            this._editClip(id, 'Key at playhead', c => {
+                const t = this._clipTime(c)
+                if (keyAt(c, prop, t, this._halfFrame())) removeKey(c, prop, t, this._halfFrame())
+                else setKey(c, prop, t, valueNow(c))
+            })
+        })
+        this.fields.push({ input, refresh: show }, { input: diamond, refresh: show })
+        const wrap = el('div', 'tl-keyed')
+        wrap.append(input, diamond)
+        return this._field(label, wrap)
+    }
+
+    /** The ease into the keys at the playhead, and a way to clear every key; shown when the clip has keys. */
+    _keysSection(id) {
+        const clip = findClip(this.store.seq, id)?.clip
+        if (!clip?.keys) return el('div', '', { hidden: '' })
+        const atPlayhead = c => Object.entries(c.keys || {}).flatMap(([prop, keys]) => keys.filter(k => Math.abs(k.t - this._clipTime(c)) <= this._halfFrame()).map(k => ({ prop, k })))
+        const easeField = this._selectField('Ease into keys here', this._easeOptions(), () => {
+            const c = findClip(this.store.seq, id)?.clip
+            return (c && atPlayhead(c)[0]?.k.ease) || DEFAULT_KEY_EASE
+        }, v => this._editClip(id, 'Change key ease', c => {
+            const here = atPlayhead(c)
+            if (!here.length) return false
+            for (const { k } of here) k.ease = v
+        }))
+        const clear = el('button', 'tl-button', { type: 'button' })
+        clear.append(icon('backspace'), document.createTextNode('Remove all keys'))
+        clear.addEventListener('click', () => this._editClip(id, 'Remove keys', c => { delete c.keys }))
+        const hint = el('p', 'tl-hint')
+        const showHint = () => {
+            const c = findClip(this.store.seq, id)?.clip
+            const times = c ? keyTimes(c).map(t => formatTimecode(t, this.store.seq.fps)).join('  ') : ''
+            hint.textContent = `Keys at ${times} from the clip's start. The ease shapes the change into a key from the one before.`
+        }
+        showHint()
+        this.fields.push({ input: hint, refresh: showHint })
+        return this._section('Keys',
+            hint,
+            this._grid(easeField),
+            el('div', 'tl-button-row').appendChild(clear).parentNode)
+    }
+
     _motionFields(id, side) {
         const get = () => findClip(this.store.seq, id)?.clip[side] || {}
         const edit = (label, fn) => this._editClip(id, label, c => { c[side] = { ...c[side] }; fn(c[side]) })
-        const eases = [['none', 'none'], ...EASE_NAMES.filter(n => n !== 'none').flatMap(n => EASE_DIRECTIONS.map(d => [`${n}.${d}`, `${n}.${d}`]))]
+        const eases = this._easeOptions()
         const title = side === 'enter' ? 'Enter' : 'Exit'
         return [
             this._selectField(title, MOTION_PRESETS.map(m => [m, m]), () => get().preset || 'none', v => edit(`Change ${side} motion`, m => { m.preset = v })),
@@ -462,27 +557,36 @@ export class InspectorView {
     /** Placement, motion, timing and compositing, shared by text, image and video clips. */
     _graphicSections(id) {
         const get = key => () => findClip(this.store.seq, id)?.clip[key] ?? 0
-        const pct = (label, key, opts = {}) => this._numberField(label, () => get(key)() * 100,
-            v => this._editClip(id, `Change ${label.toLowerCase()}`, c => { c[key] = v / 100 }), { step: 1, digits: 1, ...opts })
         return [
-            this._section('Position', this._grid(
-                pct('X %', 'x'),
-                pct('Y %', 'y'),
-                pct('Scale %', 'scale', { min: 0 }),
-                this._numberField('Rotation °', get('rotation'), v => this._editClip(id, 'Change rotation', c => { c.rotation = v }), { step: 1, digits: 1 }),
-            )),
+            this._placementSection(id),
             this._section('Motion', this._grid(...this._motionFields(id, 'enter'), ...this._motionFields(id, 'exit'))),
             this._section('Timing', this._grid(
                 this._timeField('Start', get('start'), t => this._editClip(id, 'Move clip', c => { c.start = Math.max(0, t) })),
                 this._timeField('Duration', get('duration'), t => this.actions.setClipDuration(id, t)),
             )),
-            this._section('Composite', this._grid(
-                this._rangeField('Opacity', () => Math.round((findClip(this.store.seq, id)?.clip.opacity ?? 1) * 100),
-                    (v, co) => this._editClip(id, 'Change opacity', c => { c.opacity = v / 100 }, co), { coalesce: `opacity:${id}` }),
-                this._selectField('Blend', BLEND_MODES.map(m => [m, m]), () => findClip(this.store.seq, id)?.clip.blend || 'normal',
-                    v => this._editClip(id, 'Change blend mode', c => { c.blend = v })),
-            )),
+            this._compositeSection(id),
+            this._keysSection(id),
         ]
+    }
+
+    /** Position, scale and rotation, each keyable. */
+    _placementSection(id) {
+        const pct = { toDisplay: v => v * 100, fromDisplay: v => v / 100, step: 1, digits: 1 }
+        return this._section('Position', this._grid(
+            this._keyedField('X %', id, 'x', { fallback: 0.5, ...pct }),
+            this._keyedField('Y %', id, 'y', { fallback: 0.5, ...pct }),
+            this._keyedField('Scale %', id, 'scale', { fallback: 1, ...pct, min: 0 }),
+            this._keyedField('Rotation °', id, 'rotation', { fallback: 0, step: 1, digits: 1 }),
+        ))
+    }
+
+    /** Opacity (keyable) and blend mode. */
+    _compositeSection(id) {
+        return this._section('Composite', this._grid(
+            this._keyedField('Opacity %', id, 'opacity', { fallback: 1, toDisplay: v => v * 100, fromDisplay: v => v / 100, step: 1, min: 0, max: 100, digits: 0 }),
+            this._selectField('Blend', BLEND_MODES.map(m => [m, m]), () => findClip(this.store.seq, id)?.clip.blend || 'normal',
+                v => this._editClip(id, 'Change blend mode', c => { c.blend = v })),
+        ))
     }
 
     _buildText(target, body) {
@@ -570,12 +674,9 @@ export class InspectorView {
                 this._timeField('Duration', get('duration'), t => this.actions.setClipDuration(id, t)),
                 this._timeField('Sequence time at start', get('offset'), t => this._editClip(id, 'Change clip offset', c => { c.offset = t })),
             )),
-            this._section('Composite', this._grid(
-                this._rangeField('Opacity', () => Math.round((findClip(this.store.seq, id)?.clip.opacity ?? 1) * 100),
-                    (v, co) => this._editClip(id, 'Change opacity', c => { c.opacity = v / 100 }, co), { coalesce: `opacity:${id}` }),
-                this._selectField('Blend', BLEND_MODES.map(m => [m, m]), () => findClip(this.store.seq, id)?.clip.blend || 'normal',
-                    v => this._editClip(id, 'Change blend mode', c => { c.blend = v })),
-            )),
+            this._compositeSection(id),
+            this._placementSection(id),
+            this._keysSection(id),
         )
         return head
     }
@@ -595,13 +696,53 @@ export class InspectorView {
                 this._timeField('Source in', get('offset'), t => this._editClip(id, 'Change source in', c => { c.offset = Math.max(0, t) })),
             )),
             this._section('Level', this._grid(
-                this._numberField('Gain dB', () => 20 * Math.log10(Math.max(1e-4, findClip(this.store.seq, id)?.clip.gain ?? 1)),
-                    v => this._editClip(id, 'Change gain', c => { c.gain = Math.pow(10, v / 20) }), { step: 0.5, min: -40, max: 12, digits: 1 }),
+                this._keyedField('Gain dB', id, 'gain', { fallback: 1, toDisplay: gainToDb, fromDisplay: dbToGain, step: 0.5, min: -60, max: 12, digits: 1 }),
                 this._numberField('Fade in s', get('fadeIn'), v => this._editClip(id, 'Change fade', c => { c.fadeIn = Math.max(0, v) }), { step: 0.1, min: 0 }),
                 this._numberField('Fade out s', get('fadeOut'), v => this._editClip(id, 'Change fade', c => { c.fadeOut = Math.max(0, v) }), { step: 0.1, min: 0 }),
             )),
+            this._keysSection(id),
+            this._duckSection(track.id),
         )
         return head
+    }
+
+    /** Ducking for a whole audio track: it dips while another track plays. */
+    _duckSection(trackId) {
+        const trackNow = () => this.store.seq.audioTracks.find(t => t.id === trackId)
+        const editTrack = (label, fn) => this.store.edit(label, seq => {
+            const t = seq.audioTracks.find(x => x.id === trackId)
+            if (!t) return false
+            return fn(t, seq)
+        })
+        const others = this.store.seq.audioTracks.filter(t => t.id !== trackId)
+        const underId = () => {
+            const t = trackNow()
+            const under = t?.duck?.under
+            return others.find(o => o.id === under || o.name === under)?.id || ''
+        }
+        const setting = (label, key, unit, opts) => this._numberField(`${label} ${unit}`, () => trackNow()?.duck?.[key] ?? DUCK_DEFAULTS[key],
+            v => editTrack(`Change ducking`, t => {
+                if (!t.duck) return false
+                t.duck = { ...t.duck, [key]: v }
+            }), opts)
+        return this._section(`Ducking for ${trackNow()?.name || 'this track'}`,
+            el('p', 'tl-hint', { text: 'The whole track dips while the chosen track is sounding, such as music under a voice. Short pauses stay ducked.' }),
+            this._grid(
+                this._selectField('Duck under', [['', 'None'], ...others.map(o => [o.id, o.name])], underId, v => editTrack('Change ducking', t => {
+                    if (!v) delete t.duck
+                    else t.duck = { ...DUCK_DEFAULTS, ...(t.duck || {}), under: v }
+                })),
+                this._selectField('Duck while', [['signal', 'it is sounding'], ['clips', 'its clips play']], () => trackNow()?.duck?.detect || 'signal',
+                    v => editTrack('Change ducking', t => {
+                        if (!t.duck) return false
+                        t.duck = { ...t.duck, detect: v }
+                    })),
+                setting('Depth', 'depth', 'dB', { step: 1, max: 0, min: -60, digits: 1 }),
+                setting('Down over', 'attack', 's', { step: 0.05, min: 0, digits: 2 }),
+                setting('Back up over', 'release', 's', { step: 0.05, min: 0, digits: 2 }),
+                setting('Hold gaps under', 'hold', 's', { step: 0.1, min: 0, digits: 2 }),
+                setting('Sounding above', 'threshold', 'dB', { step: 1, max: 0, min: -90, digits: 0 }),
+            ))
     }
 
     _buildTransition(target, body) {

@@ -14,6 +14,7 @@
  */
 
 import { ease } from '../model/ease.js'
+import { keyValue } from '../model/automation.js'
 import { mediaBlob, mediaKey } from '../audio/media.js'
 import { loadFont, fontStatus, cssFamily, onFontLoaded } from './fonts.js'
 
@@ -334,12 +335,17 @@ export class GraphicsRenderer {
         }
         if (!content) return canvas
 
+        const keys = clip.keys || {}
+        const x = keyValue(keys.x, elapsed, clip.x)
+        const y = keyValue(keys.y, elapsed, clip.y)
+        const scale = keyValue(keys.scale, elapsed, clip.scale)
+        const rotation = keyValue(keys.rotation, elapsed, clip.rotation || 0)
         g.save()
         g.globalAlpha = Math.max(0, Math.min(1, m.alpha))
         if (m.blur > 0) g.filter = `blur(${(m.blur * height).toFixed(2)}px)`
-        g.translate(clip.x * width, (clip.y + m.dy) * height)
-        g.rotate(((clip.rotation || 0) * Math.PI) / 180)
-        g.scale(clip.scale * m.scale, clip.scale * m.scale)
+        g.translate(x * width, (y + m.dy) * height)
+        g.rotate((rotation * Math.PI) / 180)
+        g.scale(scale * m.scale, scale * m.scale)
         if (m.wipeFrom > 0 || m.wipeTo < 1) {
             g.beginPath()
             g.rect(content.left + content.width * m.wipeFrom, content.top - height, content.width * (m.wipeTo - m.wipeFrom), content.height + height * 2)

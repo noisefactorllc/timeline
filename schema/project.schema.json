@@ -356,7 +356,7 @@
         "x": {
           "type": "number",
           "default": 0.5,
-          "description": "Horizontal position of a graphic as a fraction of the frame width: 0 is the left edge, 1 the right."
+          "description": "Horizontal position as a fraction of the frame width: 0 is the left edge, 1 the right. On a program or nested sequence it moves the whole picture's centre."
         },
         "y": {
           "type": "number",
@@ -366,7 +366,8 @@
         "scale": {
           "type": "number",
           "minimum": 0,
-          "default": 1
+          "default": 1,
+          "description": "Size multiplier; 1 is the clip's natural size in the frame. On a program or nested sequence it zooms the whole picture."
         },
         "rotation": {
           "type": "number",
@@ -443,6 +444,28 @@
           ],
           "default": null,
           "description": "A CSS colour for a box behind the text, or null for none."
+        },
+        "keys": {
+          "type": "object",
+          "description": "Keyframes. Each property holds its value before the first key and after the last, and eases between keys.",
+          "properties": {
+            "opacity": {
+              "$ref": "#/$defs/keyList"
+            },
+            "x": {
+              "$ref": "#/$defs/keyList"
+            },
+            "y": {
+              "$ref": "#/$defs/keyList"
+            },
+            "scale": {
+              "$ref": "#/$defs/keyList"
+            },
+            "rotation": {
+              "$ref": "#/$defs/keyList"
+            }
+          },
+          "additionalProperties": false
         }
       },
       "description": "A clip on a video track. Program clips run a Noisemaker DSL program; a program that reads media() reads the composite of the tracks beneath it. Sequence clips nest a sequence. Text, image and video clips are graphics: drawn with transparency over the tracks beneath at a position, scale and rotation, with enter and exit motion."
@@ -514,6 +537,60 @@
           "items": {
             "$ref": "#/$defs/audioClip"
           }
+        },
+        "duck": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Dip this whole track while another audio track sounds, such as music under a voice. The dip is an exact curve built from where the other track is louder than threshold (or, with detect: clips, from where its clips are).",
+          "required": [
+            "under"
+          ],
+          "properties": {
+            "under": {
+              "type": "string",
+              "description": "Name or id of the audio track whose clips trigger the dip."
+            },
+            "depth": {
+              "type": "number",
+              "maximum": 0,
+              "default": -12,
+              "description": "How far it dips, in dB."
+            },
+            "attack": {
+              "type": "number",
+              "minimum": 0,
+              "default": 0.3,
+              "description": "Seconds it takes to dip, ending as a clip starts."
+            },
+            "release": {
+              "type": "number",
+              "minimum": 0,
+              "default": 0.75,
+              "description": "Seconds it takes to come back after a clip ends."
+            },
+            "hold": {
+              "type": "number",
+              "minimum": 0,
+              "default": 0.5,
+              "description": "Gaps in the other track shorter than this stay dipped, so pauses between lines do not pump."
+            },
+            "threshold": {
+              "type": "number",
+              "maximum": 0,
+              "default": -45,
+              "description": "The other track counts as sounding above this level, in dB."
+            },
+            "detect": {
+              "enum": [
+                "signal",
+                "clips"
+              ],
+              "default": "signal",
+              "description": "signal dips where the other track sounds; clips dips for the whole of each of its clips."
+            }
+          }
         }
       }
     },
@@ -550,7 +627,8 @@
         "gain": {
           "type": "number",
           "minimum": 0,
-          "default": 1
+          "default": 1,
+          "description": "Linear volume; 0.5 is about -6 dB."
         },
         "fadeIn": {
           "$ref": "#/$defs/seconds",
@@ -559,6 +637,16 @@
         "fadeOut": {
           "$ref": "#/$defs/seconds",
           "default": 0
+        },
+        "keys": {
+          "type": "object",
+          "description": "Volume keyframes: gain over time, linear, multiplied with the fades.",
+          "properties": {
+            "gain": {
+              "$ref": "#/$defs/keyList"
+            }
+          },
+          "additionalProperties": false
         }
       }
     },
@@ -591,6 +679,34 @@
           "type": "string",
           "description": "An easing curve named like GSAP's: none, or power1 to power4, sine, expo, circ or back, followed by .in, .out or .inOut (power3.out). Enter defaults to power3.out, exit to power2.in."
         }
+      }
+    },
+    "key": {
+      "type": "object",
+      "required": [
+        "t",
+        "v"
+      ],
+      "properties": {
+        "t": {
+          "type": "number",
+          "description": "Seconds from the clip's start."
+        },
+        "v": {
+          "type": "number",
+          "description": "The value at that time."
+        },
+        "ease": {
+          "type": "string",
+          "default": "power2.inOut",
+          "description": "Shapes the change into this key from the key before, named like GSAP eases (power3.out, expo.inOut, none)."
+        }
+      }
+    },
+    "keyList": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/key"
       }
     }
   }

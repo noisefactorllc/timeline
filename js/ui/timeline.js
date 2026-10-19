@@ -16,6 +16,7 @@ import { transitionPreset, postPreset } from '../data/presets.js'
 import { THUMB_W, THUMB_H } from '../render/thumbnails.js'
 import { cachedAudioBuffer, waveformPeaks } from '../audio/media.js'
 import { showContextMenu } from './contextMenu.js'
+import { clipGainAt, duckRegions, duckGainAt, keyTimes } from '../model/automation.js'
 import { TRANSITIONS } from '../data/presets.js'
 import { splitClip, deleteTransition } from '../model/edit.js'
 
@@ -405,6 +406,12 @@ export class TimelineView {
             if (clip.blend && clip.blend !== 'normal') label.append(el('span', 'tl-clip-tag', { text: clip.blend }))
         }
         node.append(label)
+        for (const t of keyTimes(clip)) {
+            if (t < 0 || t > clip.duration) continue
+            const mark = el('span', 'tl-clip-key', { title: `Key at ${formatTimecode(clip.start + t, seq.fps)}` })
+            mark.style.left = `${this.timeToX(t)}px`
+            node.append(mark)
+        }
         node.append(el('div', 'tl-clip-handle is-start', { 'data-edge': 'start' }), el('div', 'tl-clip-handle is-end', { 'data-edge': 'end' }))
         this._clipEls.set(clip.id, { node, clip, kind })
         return node
@@ -646,6 +653,21 @@ export class TimelineView {
         const buckets = Math.max(64, Math.min(200000, Math.ceil(buffer.duration * this.pps)))
         const peaks = waveformPeaks(buffer, buckets)
         const mid = h / 2
+        // The waveform is drawn at the level heard: clip volume, fades, keys, track gain and ducking.
+        const seq = this.store.seq
+        const track = findClip(seq, clip.id)?.track
+        const regions = track?.duck ? duckRegions(seq, track, cachedAudioBuffer, this.store.project.media) : []
+        const gainAt = px => {
+            const local = (offsetPx + px) * secondsPerPx
+            const duck = regions.length ? duckGainAt(track.duck, regions, clip.start + local) : 1
+            return clipGainAt(clip, local) * (track?.gain ?? 1) * duck
+        }
+        const gains = new Float32Array(w)
+        let shaped = false
+        for (let px = 0; px < w; px++) {
+            gains[px] = gainAt(px)
+            if (Math.abs(gains[px] - 1) > 1e-3) shaped = true
+        }
         g.globalAlpha = 0.8
         for (let px = 0; px < w; px++) {
             const t = clip.offset + (offsetPx + px) * secondsPerPx
@@ -653,9 +675,22 @@ export class TimelineView {
             if (b < 0 || b >= buckets) continue
             const lo = peaks[b * 2]
             const hi = peaks[b * 2 + 1]
-            const y0 = mid - hi * mid * (clip.gain ?? 1)
-            const y1 = mid - lo * mid * (clip.gain ?? 1)
+            const y0 = mid - hi * mid * gains[px]
+            const y1 = mid - lo * mid * gains[px]
             g.fillRect(px, y0, 1, Math.max(1, y1 - y0))
+        }
+        // The volume curve itself, full volume at the top.
+        if (shaped) {
+            g.globalAlpha = 0.9
+            g.strokeStyle = styles.getPropertyValue('--hf-yellow').trim() || '#fc4'
+            g.lineWidth = 1.5
+            g.beginPath()
+            for (let px = 0; px < w; px++) {
+                const y = 2 + (h - 4) * (1 - Math.min(1, gains[px]))
+                if (px === 0) g.moveTo(px, y)
+                else g.lineTo(px, y)
+            }
+            g.stroke()
         }
         g.globalAlpha = 1
     }

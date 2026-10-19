@@ -9,14 +9,19 @@
  *   audio(band: audioBand.low, name: "Drums", channel: 1)   the track named Drums
  *
  * Track analysis ignores mute, so a muted track can drive visuals without
- * being heard. The mix respects mute, solo and track gain. Analysis is a
+ * being heard. The mix respects mute, solo, track gain, each clip's volume
+ * curve (level, keys and fades) and ducking (automation.js). Analysis is a
  * pure function of sequence time (see analysis.js), so preview, scrubbing
  * and export see the same values.
  */
 
 import { AudioAnalyzer, applyFrame, silentFrame } from './analysis.js'
-import { getAudioBuffer, mediaKey, SAMPLE_RATE } from './media.js'
+import { getAudioBuffer, cachedAudioBuffer, mediaKey, SAMPLE_RATE } from './media.js'
 import { clipEnd } from '../model/project.js'
+import { clipGainAt, trackGainCurve, duckTrigger } from '../model/automation.js'
+
+const CLIP_CURVE_RATE = 200
+const TRACK_CURVE_RATE = 1000
 
 const SILENT = silentFrame()
 
@@ -24,8 +29,8 @@ function mixKey(project, seq) {
     return JSON.stringify({
         d: seq.duration,
         t: seq.audioTracks.map(t => ({
-            id: t.id, n: t.name, m: t.muted, s: t.solo, g: t.gain,
-            c: t.clips.map(c => [c.mediaId, c.start, c.duration, c.offset, c.gain, c.fadeIn, c.fadeOut]),
+            id: t.id, n: t.name, m: t.muted, s: t.solo, g: t.gain, duck: t.duck || null,
+            c: t.clips.map(c => [c.mediaId, c.start, c.duration, c.offset, c.gain, c.fadeIn, c.fadeOut, c.keys?.gain || null]),
         })),
         media: seq.audioTracks.flatMap(t => t.clips.map(c => mediaKey(project.media[c.mediaId]))),
     })
@@ -50,26 +55,31 @@ async function renderTrack(project, seq, track) {
         const g = ctx.createGain()
         const start = clip.start
         const end = Math.min(clipEnd(clip), seq.duration)
-        const level = clip.gain ?? 1
-        const fadeIn = Math.min(clip.fadeIn || 0, end - start)
-        const fadeOut = Math.min(clip.fadeOut || 0, end - start - fadeIn)
-        g.gain.setValueAtTime(fadeIn > 0 ? 0 : level, start)
-        if (fadeIn > 0) g.gain.linearRampToValueAtTime(level, start + fadeIn)
-        if (fadeOut > 0) {
-            g.gain.setValueAtTime(level, end - fadeOut)
-            g.gain.linearRampToValueAtTime(0, end)
-        }
+        // The clip's volume curve: its level, gain keys and fades, sampled finely enough to follow any ease.
+        const n = Math.max(2, Math.ceil((end - start) * CLIP_CURVE_RATE) + 1)
+        const curve = new Float32Array(n)
+        for (let i = 0; i < n; i++) curve[i] = clipGainAt(clip, ((end - start) * i) / (n - 1))
+        g.gain.setValueCurveAtTime(curve, start, end - start)
         src.connect(g).connect(ctx.destination)
         const offset = Math.max(0, clip.offset)
         if (offset < buffer.duration) src.start(start, offset, end - start)
     }
     if (!any) return null
     const rendered = await ctx.startRendering()
-    const gain = track.gain ?? 1
-    if (gain !== 1) {
+    // Ducking follows where the trigger track sounds, so its audio must be decoded first.
+    const trigger = track.duck ? duckTrigger(seq, track) : null
+    if (trigger) await Promise.all(trigger.clips.map(c => getAudioBuffer(project.media[c.mediaId]).catch(() => null)))
+    // Track gain and ducking, interpolated from a fine curve to every sample.
+    const curve = trackGainCurve(seq, track, TRACK_CURVE_RATE, cachedAudioBuffer, project.media)
+    if (curve) {
+        const step = TRACK_CURVE_RATE / rendered.sampleRate
         for (let c = 0; c < rendered.numberOfChannels; c++) {
             const data = rendered.getChannelData(c)
-            for (let i = 0; i < data.length; i++) data[i] *= gain
+            for (let i = 0; i < data.length; i++) {
+                const x = i * step
+                const k = Math.min(curve.length - 2, Math.floor(x))
+                data[i] *= curve[k] + (curve[k + 1] - curve[k]) * (x - k)
+            }
         }
     }
     return rendered
