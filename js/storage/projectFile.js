@@ -1,7 +1,7 @@
 /**
  * Project files: a zip holding project.json and the bytes of every
  * imported audio file, so a project moves between browsers intact.
- * Generated audio travels as its recipe. Media stay binary throughout.
+ * Audio that ships with the app travels as its URL. Media stay binary throughout.
  */
 
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate'
@@ -13,7 +13,7 @@ export const PROJECT_EXTENSION = 'timeline'
 export async function projectToFile(project) {
     const files = { 'project.json': strToU8(JSON.stringify(project, null, 2)) }
     for (const media of Object.values(project.media || {})) {
-        if (media.recipe) continue
+        if (media.recipe || media.url) continue
         const record = await loadMedia(media.id)
         if (record?.bytes) files[`media/${media.id}`] = new Uint8Array(record.bytes)
     }

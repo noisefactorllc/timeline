@@ -60,6 +60,31 @@ export async function probeCodecs(format, width, height, fps) {
  * @param {AbortSignal} [o.signal]
  * @returns {Promise<{blob: Blob|null, frames: number, videoCodec: string, audioCodec: string|null, mimeType: string}>}
  */
+/**
+ * Wrap a file's writable stream to report how many bytes have reached it.
+ * The muxer writes { type: 'write', data, position } chunks.
+ */
+function countingStream(writable, onBytes) {
+    const writer = writable.getWriter()
+    let size = 0
+    const stream = new WritableStream({
+        async write(chunk) {
+            await writer.write(chunk)
+            const length = chunk?.data?.byteLength ?? chunk?.byteLength ?? 0
+            const end = (chunk?.position ?? size) + length
+            if (end > size) {
+                size = end
+                onBytes(size)
+            }
+        },
+        close: () => writer.close(),
+        abort: reason => writer.abort(reason),
+    })
+    // Discards the partly written file when an export fails or is cancelled.
+    stream.discardFile = reason => writer.abort(reason)
+    return stream
+}
+
 export async function exportSequence({ seq, project, renderer, pool, audio, settings, fileHandle = null, onProgress = () => {}, signal }) {
     const fps = seq.fps
     const width = even(settings.width)
@@ -69,17 +94,19 @@ export async function exportSequence({ seq, project, renderer, pool, audio, sett
     const frames = frameCount(end - start, fps)
     if (frames < 1) throw new Error('The export range is empty')
 
+    onProgress({ phase: 'prepare', message: 'Checking the encoders' })
     const codecs = await probeCodecs(settings.format, width, height, fps)
     if (!codecs.video) throw new Error(`This browser cannot encode ${settings.format.toUpperCase()} video at ${width}×${height}`)
     const withAudio = settings.includeAudio && !!codecs.audio
     if (settings.includeAudio && !codecs.audio) onProgress({ phase: 'warning', message: 'This browser cannot encode audio for this format; the video will be silent.' })
 
+    onProgress({ phase: 'prepare', message: 'Mixing the audio' })
     await audio.mix(project, seq)
 
     const previous = { width: pool.width, height: pool.height }
     const aborted = () => signal?.aborted
     const startedAt = performance.now()
-    let writable = null
+    let fileStream = null
     let output = null
     renderer.exporting = true
     try {
@@ -92,9 +119,11 @@ export async function exportSequence({ seq, project, renderer, pool, audio, sett
         const ctx = canvas.getContext('2d', { alpha: false })
 
         let target
+        let written = 0
         if (fileHandle) {
-            writable = await fileHandle.createWritable()
-            target = new StreamTarget(writable, { chunked: true })
+            onProgress({ phase: 'prepare', message: `Opening ${fileHandle.name}` })
+            fileStream = countingStream(await fileHandle.createWritable(), bytes => { written = bytes })
+            target = new StreamTarget(fileStream, { chunked: true, chunkSize: 2 ** 21 })
         } else {
             target = new BufferTarget()
         }
@@ -111,6 +140,7 @@ export async function exportSequence({ seq, project, renderer, pool, audio, sett
             output.addAudioTrack(audioSource)
         }
 
+        onProgress({ phase: 'prepare', message: 'Preparing the renderers' })
         await output.start()
 
         // Pre-roll stateful programs into the range, as continuous playback would have.
@@ -136,6 +166,7 @@ export async function exportSequence({ seq, project, renderer, pool, audio, sett
             await audioSource.add(slice)
         }
 
+        const renderStart = performance.now()
         for (let i = 0; i < frames; i++) {
             if (aborted()) throw new DOMException('Export cancelled', 'AbortError')
             const t = start + i / fps
@@ -149,21 +180,23 @@ export async function exportSequence({ seq, project, renderer, pool, audio, sett
                 done: i + 1,
                 total: frames,
                 elapsed,
-                eta: elapsed / (i + 1) * (frames - i - 1),
+                eta: (performance.now() - renderStart) / 1000 / (i + 1) * (frames - i - 1),
+                written,
                 canvas,
             })
         }
         await sendAudioUntil(frames / fps)
         videoSource.close()
         audioSource?.close()
-        onProgress({ phase: 'finalize' })
+        onProgress({ phase: 'finalize', written })
         await output.finalize()
         const mimeType = settings.format === 'webm' ? 'video/webm' : 'video/mp4'
         const blob = fileHandle ? null : new Blob([target.buffer], { type: mimeType })
-        return { blob, frames, videoCodec: codecs.video, audioCodec: withAudio ? codecs.audio : null, mimeType }
+        const size = blob ? blob.size : written
+        return { blob, size, frames, videoCodec: codecs.video, audioCodec: withAudio ? codecs.audio : null, mimeType }
     } catch (err) {
         try { await output?.cancel() } catch { /* already closed */ }
-        try { await writable?.abort?.() } catch { /* nothing to abort */ }
+        try { await fileStream?.discardFile(err) } catch { /* already closed or aborted */ }
         throw err
     } finally {
         pool.resizeAll(previous.width, previous.height)

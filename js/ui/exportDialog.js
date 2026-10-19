@@ -32,6 +32,10 @@ function select(options, value) {
     return s
 }
 
+function fmtSize(bytes) {
+    return `${(bytes / 1048576).toFixed(1)} MB`
+}
+
 function fmtTime(seconds) {
     if (!Number.isFinite(seconds)) return '--:--'
     const s = Math.max(0, Math.round(seconds))
@@ -172,8 +176,13 @@ export class ExportDialog {
         const left = el('span', '', { text: 'Starting' })
         const right = el('span')
         stats.append(left, right)
-        const note = el('p', 'tl-export-note', { text: 'Every frame renders exactly; this can take longer than real time.' })
-        body.append(preview, bar, stats, note)
+        const where = el('p', 'tl-export-note', {
+            text: fileHandle
+                ? `Writing to ${fileHandle.name}. Your browser keeps the file hidden while it is written; it appears in the folder you chose when the export finishes.`
+                : 'The video builds in memory. When it finishes you can watch it here and download it.',
+        })
+        const note = el('p', 'tl-export-note', { text: 'Every frame renders exactly, so this can take longer than real time.' })
+        body.append(preview, bar, stats, where, note)
         const actions = el('div', 'tl-dialog-actions')
         const cancel = el('button', 'tl-button', { type: 'button', text: 'Cancel export' })
         actions.append(cancel)
@@ -183,6 +192,9 @@ export class ExportDialog {
         this.running = controller
         cancel.addEventListener('click', () => controller.abort())
         let lastPreview = 0
+        let finishing = null
+        const startedAt = performance.now()
+        const stopFinishing = () => clearInterval(finishing)
         try {
             const result = await exportSequence({
                 seq, project, renderer: this.renderer, pool: this.pool, audio: this.audio, settings, fileHandle,
@@ -192,16 +204,32 @@ export class ExportDialog {
                         note.textContent = p.message
                         return
                     }
+                    if (p.phase === 'prepare') {
+                        left.textContent = p.message
+                        return
+                    }
                     if (p.phase === 'preroll') {
-                        left.textContent = `Pre-rolling ${p.done} of ${p.total}`
+                        left.textContent = `Warming up programs before the range, ${p.done} of ${p.total}`
                         return
                     }
                     if (p.phase === 'finalize') {
-                        left.textContent = 'Finishing the file'
+                        // The encoders flush and the file closes. Keep the clock running so the
+                        // dialog visibly works. The bar stays still: animating it starved the
+                        // video encoder's final flush on software-rendered GPUs.
+                        fill.style.setProperty('--p', '1')
+                        const tick = () => {
+                            const written = p.written ? `, ${fmtSize(p.written)} written` : ''
+                            left.textContent = `Finishing the file${written}`
+                            right.textContent = `${fmtTime((performance.now() - startedAt) / 1000)} elapsed`
+                        }
+                        tick()
+                        finishing = setInterval(tick, 250)
                         return
                     }
                     fill.style.setProperty('--p', String(p.done / p.total))
-                    left.textContent = `Frame ${p.done} of ${p.total}`
+                    const pct = Math.floor(p.done / p.total * 100)
+                    const written = p.written ? `, ${fmtSize(p.written)} written` : ''
+                    left.textContent = `Frame ${p.done} of ${p.total} (${pct}%)${written}`
                     right.textContent = `${fmtTime(p.elapsed)} elapsed, ${fmtTime(p.eta)} left`
                     const now = performance.now()
                     if (now - lastPreview > 120) {
@@ -210,9 +238,11 @@ export class ExportDialog {
                     }
                 },
             })
+            stopFinishing()
             this.running = null
             this._done(result, settings, fileHandle)
         } catch (err) {
+            stopFinishing()
             this.running = null
             if (err?.name === 'AbortError') {
                 this._renderSettings()
@@ -244,13 +274,19 @@ export class ExportDialog {
             this.lastUrl = URL.createObjectURL(result.blob)
             const video = el('video', 'tl-export-preview', { controls: '', src: this.lastUrl, playsinline: '' })
             body.append(video)
-            const mb = (result.blob.size / 1048576).toFixed(1)
-            body.append(el('p', 'tl-export-note', { text: `${result.frames} frames, ${result.videoCodec.toUpperCase()} video, ${audioText}, ${mb} MB.` }))
+            body.append(el('p', 'tl-export-note', { text: `${result.frames} frames, ${result.videoCodec.toUpperCase()} video, ${audioText}, ${fmtSize(result.blob.size)}.` }))
+            const saving = el('p', 'tl-export-note', { role: 'status' })
+            body.append(saving)
             const name = fileName(project, seq, settings.format)
             const download = el('a', 'tl-button is-primary', { href: this.lastUrl, download: name, text: 'Download video' })
+            download.addEventListener('click', () => {
+                saving.textContent = `Your browser is saving ${name} (${fmtSize(result.blob.size)}) to your downloads. If it does not appear, check your browser's downloads list.`
+                download.textContent = 'Download again'
+            })
             actions.append(close, download)
         } else {
-            body.append(el('p', 'tl-export-note', { text: `Saved ${fileHandle?.name || 'the video'}: ${result.frames} frames, ${result.videoCodec.toUpperCase()} video, ${audioText}.` }))
+            const size = result.size ? ` (${fmtSize(result.size)})` : ''
+            body.append(el('p', 'tl-export-note', { text: `Saved ${fileHandle?.name || 'the video'}${size} to the folder you chose. ${result.frames} frames, ${result.videoCodec.toUpperCase()} video, ${audioText}.` }))
             actions.append(close)
         }
         this.dialog.replaceChildren(title, body, actions)

@@ -80,21 +80,103 @@ button {
     pointer-events: none;
 }
 
+.tl-boot-panel {
+    display: grid;
+    gap: var(--hf-space-3);
+    width: min(360px, calc(100vw - 32px));
+}
+
 .tl-boot-mark {
     font-weight: 700;
     letter-spacing: 0.5em;
     font-size: var(--hf-size-2xl);
     color: var(--hf-text-bright);
+    margin-bottom: var(--hf-space-2);
+}
+
+.tl-boot-meter {
+    display: grid;
+    grid-template-columns: 1fr 4ch;
+    align-items: center;
+    gap: 10px;
+}
+
+.tl-boot-percent {
+    font-family: var(--tl-font-mono);
+    font-size: var(--hf-size-xs);
+    color: var(--hf-text-bright);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
 }
 
 .tl-boot-status {
-    color: var(--hf-text-dim);
+    margin: 0;
+    color: var(--hf-text-normal);
     font-size: var(--hf-size-sm);
+    text-align: left;
+    min-height: 1.5em;
 }
 
 .tl-boot-status.is-error {
     color: var(--hf-red);
-    max-width: 48ch;
+}
+
+.tl-boot-steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 4px;
+    font-family: var(--tl-font-mono);
+    font-size: 11px;
+    text-align: left;
+}
+
+.tl-boot-steps li {
+    display: grid;
+    grid-template-columns: 10px 1fr auto;
+    align-items: center;
+    gap: 8px;
+    color: var(--hf-text-muted);
+}
+
+.tl-boot-steps li::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    box-sizing: border-box;
+    border: 1px solid currentColor;
+}
+
+.tl-boot-steps li[data-state="active"] {
+    color: var(--hf-text-normal);
+}
+
+.tl-boot-steps li[data-state="active"]::before {
+    background: var(--hf-text-bright);
+    border-color: var(--hf-text-bright);
+    animation: tl-boot-pulse 0.9s ease-in-out infinite alternate;
+}
+
+.tl-boot-steps li[data-state="done"] {
+    color: var(--hf-text-dim);
+}
+
+.tl-boot-steps li[data-state="done"]::before {
+    background: currentColor;
+}
+
+.tl-boot-steps li[data-state="error"] {
+    color: var(--hf-red);
+}
+
+.tl-boot-step-detail {
+    font-variant-numeric: tabular-nums;
+}
+
+@keyframes tl-boot-pulse {
+    from { opacity: 1; }
+    to { opacity: 0.3; }
 }
 
 /* --- top bar ------------------------------------------------------------- */
@@ -1628,6 +1710,10 @@ button {
     .tl-boot,
     .tl-progress > div {
         transition: none;
+    }
+
+    .tl-boot-steps li[data-state="active"]::before {
+        animation: none;
     }
 }
 

@@ -17,6 +17,7 @@ const TYPES = {
     '.svg': 'image/svg+xml',
     '.wav': 'audio/wav',
     '.mp3': 'audio/mpeg',
+    '.flac': 'audio/flac',
     '.m4a': 'audio/mp4',
     '.mp4': 'video/mp4',
     '.webm': 'video/webm',

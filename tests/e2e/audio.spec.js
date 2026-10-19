@@ -61,3 +61,19 @@ test('muting a track silences the mix but keeps it driving visuals', async ({ pa
     expect(result.drumsPeak).toBeGreaterThan(0.1)
     expect(result.drumsLow).toBeGreaterThan(0.3)
 })
+
+test('the demo soundtrack decodes from the stems that ship with the app', async ({ page }) => {
+    await boot(page)
+    const stems = await page.evaluate(async () => {
+        const { cachedAudioBuffer } = await import('/js/audio/media.js')
+        const media = Object.values(window.__timeline.store.project.media)
+        return media.map(m => {
+            const b = cachedAudioBuffer(m.id)
+            return { url: m.url, duration: b?.duration, rate: b?.sampleRate, channels: b?.numberOfChannels }
+        })
+    })
+    expect(stems).toEqual([
+        { url: 'media/refinery-drums.flac', duration: 60, rate: 48000, channels: 2 },
+        { url: 'media/refinery-synths.flac', duration: 60, rate: 48000, channels: 2 },
+    ])
+})

@@ -86,14 +86,27 @@ export class SequenceRenderer {
      * so no frame is ever missing a layer.
      */
     async renderFrameExact(seq, t, { seek = false } = {}) {
-        const frame = this.pool.beginFrame()
-        const collect = { mode: 'collect', entries: [], frame, missing: 0 }
-        this._renderSeq(seq, t, 'root', 0, collect)
-        await Promise.all(collect.entries.map(e => this.pool.settle(e)))
+        await this.prepareFrame(seq, t)
         this.audio.feed(seq, t)
         const ctx = { mode: 'render', seek, missing: 0, rootFps: seq.fps }
         const canvas = this._renderSeq(seq, t, 'root', 0, ctx)
         return { canvas, missing: ctx.missing }
+    }
+
+    /**
+     * Compile everything the frame at `t` needs, reporting
+     * onProgress(compiled, total) as each program settles. The frame's
+     * renderers stay reserved until the next frame begins.
+     */
+    async prepareFrame(seq, t, onProgress = () => {}) {
+        const frame = this.pool.beginFrame()
+        const collect = { mode: 'collect', entries: [], frame, missing: 0 }
+        this._renderSeq(seq, t, 'root', 0, collect)
+        const total = collect.entries.length
+        let compiled = 0
+        onProgress(0, total)
+        await Promise.all(collect.entries.map(e => this.pool.settle(e).then(() => onProgress(++compiled, total))))
+        return { total, missing: collect.missing }
     }
 
     /** Compile what plays in the next few seconds before it is needed. */

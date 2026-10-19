@@ -62,3 +62,36 @@ test('export renders every frame and muxes the timeline audio', async ({ page })
     expect(info.firstLoud).toBeLessThan(0.6)
     expect(info.a).not.toBe(info.b)
 })
+
+test('export writes straight to a chosen file and says where it went', async ({ page }) => {
+    await page.addInitScript(() => {
+        window.showSaveFilePicker = async () => (await navigator.storage.getDirectory()).getFileHandle('stream-test.mp4', { create: true })
+    })
+    await boot(page)
+    const mp4 = await page.evaluate(async () => {
+        const { probeCodecs } = await import('/js/export/exporter.js')
+        const c = await probeCodecs('mp4', 960, 540, 30)
+        return !!(c.video && c.audio)
+    })
+    // Half a second from the start at half size: no pre-roll, and quick on a software renderer.
+    await page.evaluate(() => window.__timeline.store.edit('range', s => { s.inPoint = 0; s.outPoint = 0.5 }))
+    await page.evaluate(() => window.__timeline.actions.exportVideo())
+    const dialog = page.locator('dialog.tl-dialog[open]')
+    if (!mp4) await dialog.locator('select').first().selectOption('webm')
+    await dialog.locator('select').nth(1).selectOption({ index: 1 })
+    await expect(dialog.locator('.tl-export-note')).toContainText('MB', { timeout: 60_000 })
+    await dialog.locator('.tl-button.is-primary').click()
+    await expect(dialog.locator('.tl-export-note').first()).toContainText('Writing to stream-test.mp4', { timeout: 60_000 })
+    await expect(dialog.locator('.hf-dialog-title')).toHaveText('Export finished', { timeout: 200_000 })
+    await expect(dialog).toContainText(/Saved stream-test\.mp4 \(\d+\.\d MB\) to the folder you chose/)
+    const info = await page.evaluate(async () => {
+        const file = await (await (await navigator.storage.getDirectory()).getFileHandle('stream-test.mp4')).getFile()
+        const mb = await import('mediabunny')
+        const input = new mb.Input({ source: new mb.BlobSource(file), formats: mb.ALL_FORMATS })
+        return { size: file.size, duration: await input.computeDuration(), audio: !!(await input.getPrimaryAudioTrack()) }
+    })
+    expect(info.size).toBeGreaterThan(10_000)
+    expect(info.duration).toBeGreaterThan(0.45)
+    expect(info.duration).toBeLessThan(0.7)
+    expect(info.audio).toBe(true)
+})

@@ -1,16 +1,16 @@
 /**
- * The demo soundtrack, synthesized in the browser so the demo project
- * needs no audio files. It renders deterministically through an
- * OfflineAudioContext as two stems: drums and synths. Putting them on
- * separate audio tracks lets programs bind to the kick and to the synths
- * independently with `audio(..., channel: N)`.
+ * The demo soundtrack's source: a synthesizer that renders two stems,
+ * drums and synths, through an OfflineAudioContext. The app does not run
+ * it; scripts/demo-track/render.mjs renders it once into the lossless
+ * stems in media/, which the demo loads like any audio file. Putting the
+ * stems on separate audio tracks lets programs bind to the kick and to
+ * the synths independently with `audio(..., channel: N)`.
  *
  * Dark industrial techno at 128 BPM, 32 bars, one minute, in E Phrygian:
  * intro, build, drop, break, drop. A driven kick, a rumble rolling on the offbeats, metal
  * percussion, a drone, an acid line through a dub delay and a phased pad.
  */
 
-export const DEMO_ID = 'refinery'
 export const DEMO_BPM = 128
 export const DEMO_BARS = 32
 export const DEMO_SAMPLE_RATE = 48000

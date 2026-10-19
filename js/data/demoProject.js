@@ -14,11 +14,26 @@ import {
 } from '../model/project.js'
 import { insertClip, addTransition, addMarker } from '../model/edit.js'
 import { transitionPreset, postPreset } from './presets.js'
-import { demoMedia } from '../audio/media.js'
-import { DEMO_ID, DEMO_BPM, DEMO_DURATION } from '../audio/demoTrack.js'
+
+export const DEMO_ID = 'refinery'
+export const DEMO_BPM = 128
+export const DEMO_DURATION = 60
 
 const BAR = (60 / DEMO_BPM) * 4
 const BEAT = BAR / 4
+
+// The soundtrack ships as two lossless stems rendered from
+// scripts/demo-track/synth.js (npm run demo-audio regenerates them).
+export const DEMO_STEMS = [
+    { stem: 'drums', id: 'med_refinery_drums', name: 'Refinery drums', url: 'media/refinery-drums.flac' },
+    { stem: 'synths', id: 'med_refinery_synths', name: 'Refinery synths', url: 'media/refinery-synths.flac' },
+]
+
+function demoMedia() {
+    return Object.fromEntries(DEMO_STEMS.map(({ id, name, url }) => [id, {
+        id, kind: 'audio', name, type: 'audio/flac', duration: DEMO_DURATION, url,
+    }]))
+}
 
 // Curated programs from the Noisedeck library (`code` is the share code).
 const P = {

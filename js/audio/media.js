@@ -1,21 +1,21 @@
 /**
- * Audio media: decoding, the generated demo stems, and waveform peaks.
+ * Audio media: loading, decoding and waveform peaks.
  *
  * A media record in the project describes the source: imported files keep
- * their bytes in IndexedDB; generated media carry a recipe and are rebuilt
- * on load. Decoded AudioBuffers are cached in memory, resampled to 48 kHz.
+ * their bytes in IndexedDB, and audio that ships with the app (the demo's
+ * stems) is fetched from its URL. Decoded AudioBuffers are cached in
+ * memory, resampled to 48 kHz.
  */
 
 import { loadMedia, saveMedia } from '../storage/db.js'
 import { uid } from '../model/project.js'
-import { renderDemoStems, DEMO_DURATION, DEMO_ID } from './demoTrack.js'
+import { fetchBytes } from '../fetchBytes.js'
 
 export const SAMPLE_RATE = 48000
 
 const buffers = new Map()
 const pending = new Map()
 const peaksCache = new WeakMap()
-let demoStems = null
 
 let decodeCtx = null
 function decoder() {
@@ -23,37 +23,39 @@ function decoder() {
     return decodeCtx
 }
 
-async function generate(recipe) {
-    if (recipe.generator === 'demo-track') {
-        if (recipe.demo !== DEMO_ID) throw new Error('This project uses the soundtrack of an earlier demo, which is no longer generated')
-        if (!demoStems) demoStems = renderDemoStems()
-        const stems = await demoStems
-        if (!stems[recipe.stem]) throw new Error(`The demo has no ${recipe.stem} stem`)
-        return stems[recipe.stem]
-    }
-    throw new Error(`Unknown audio generator: ${recipe.generator}`)
-}
-
-/** True for a project made from an earlier demo, whose soundtrack is gone. */
+/**
+ * True for a project made from an earlier demo. Those generated their
+ * soundtrack in the browser from a recipe, and the generator is gone.
+ */
 export function usesEarlierDemo(project) {
-    return Object.values(project?.media || {}).some(m => m.recipe?.generator === 'demo-track' && m.recipe.demo !== DEMO_ID)
+    return Object.values(project?.media || {}).some(m => m.recipe)
 }
 
-/** Decoded AudioBuffer for a project media record (cached). */
-export function getAudioBuffer(media) {
+/**
+ * Decoded AudioBuffer for a project media record (cached). `onProgress`
+ * receives { fraction, received, total } while a bundled file downloads
+ * (bytes) and decodes.
+ */
+export function getAudioBuffer(media, { onProgress } = {}) {
     if (!media) return Promise.resolve(null)
     if (buffers.has(media.id)) return Promise.resolve(buffers.get(media.id))
     if (pending.has(media.id)) return pending.get(media.id)
     const job = (async () => {
         let buffer
         if (media.recipe) {
-            buffer = await generate(media.recipe)
+            throw new Error('This project uses the soundtrack of an earlier demo, which is no longer available')
+        } else if (media.url) {
+            const bytes = await fetchBytes(new URL(media.url, document.baseURI), (fraction, received, total) => {
+                onProgress?.({ fraction: fraction * 0.9, received, total })
+            })
+            buffer = await decoder().decodeAudioData(bytes)
         } else {
             const record = await loadMedia(media.id)
             if (!record) throw new Error(`Audio "${media.name}" is missing from this browser's storage`)
             buffer = await decoder().decodeAudioData(record.bytes.slice(0))
         }
         buffers.set(media.id, buffer)
+        onProgress?.({ fraction: 1 })
         return buffer
     })()
     pending.set(media.id, job)
@@ -80,20 +82,6 @@ export async function importAudioFile(file) {
     await saveMedia({ id: media.id, name: media.name, type: media.type, bytes })
     buffers.set(media.id, buffer)
     return media
-}
-
-/** Media records for the generated demo stems. */
-export function demoMedia() {
-    return {
-        'med_refinery_drums': {
-            id: 'med_refinery_drums', kind: 'audio', name: 'Refinery drums', duration: DEMO_DURATION,
-            recipe: { generator: 'demo-track', demo: DEMO_ID, stem: 'drums' },
-        },
-        'med_refinery_synths': {
-            id: 'med_refinery_synths', kind: 'audio', name: 'Refinery synths', duration: DEMO_DURATION,
-            recipe: { generator: 'demo-track', demo: DEMO_ID, stem: 'synths' },
-        },
-    }
 }
 
 /**

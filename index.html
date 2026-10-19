@@ -72,9 +72,22 @@
         <span>Editing a timeline needs a wider window. Open Timeline on a desktop browser, or widen this window.</span>
     </div>
 
-    <div id="boot" class="tl-boot" role="status" aria-live="polite">
-        <div class="tl-boot-mark">TIMELINE</div>
-        <div id="boot-status" class="tl-boot-status">Loading the engine</div>
+    <div id="boot" class="tl-boot">
+        <div class="tl-boot-panel">
+            <div class="tl-boot-mark">TIMELINE</div>
+            <div class="tl-boot-meter">
+                <div class="tl-progress" role="progressbar" aria-label="Loading Timeline" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div></div></div>
+                <span class="tl-boot-percent">0%</span>
+            </div>
+            <p class="tl-boot-status" role="status" aria-live="polite">Loading the Noisemaker engine</p>
+            <ol class="tl-boot-steps">
+                <li data-step="engine" data-state="active"><span class="tl-boot-step-name">Engine</span><span class="tl-boot-step-detail"></span></li>
+                <li data-step="editor" data-state="pending"><span class="tl-boot-step-name">Editor</span><span class="tl-boot-step-detail"></span></li>
+                <li data-step="project" data-state="pending"><span class="tl-boot-step-name">Project</span><span class="tl-boot-step-detail"></span></li>
+                <li data-step="audio" data-state="pending"><span class="tl-boot-step-name">Audio</span><span class="tl-boot-step-detail"></span></li>
+                <li data-step="programs" data-state="pending"><span class="tl-boot-step-name">Programs</span><span class="tl-boot-step-detail"></span></li>
+            </ol>
+        </div>
     </div>
 
     <script type="module" src="js/app.js"></script>

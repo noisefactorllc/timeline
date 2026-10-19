@@ -9,24 +9,30 @@
  */
 
 import { initEscapeHandler, initializeTooltips, showToast, AboutDialog, hasOpenEscapeables, formatShortcut } from 'handfish'
+import { BootProgress, formatBytes } from './ui/bootProgress.js'
+import { ENGINE_URL } from './noisemaker/cdn.js'
+import { fetchBytes } from './fetchBytes.js'
 
-const bootStatus = document.getElementById('boot-status')
-const setBoot = text => { if (bootStatus) bootStatus.textContent = text }
-
-function bootFailed(message) {
-    if (!bootStatus) return
-    bootStatus.classList.add('is-error')
-    bootStatus.textContent = message
-}
+const boot = new BootProgress(document.getElementById('boot'))
 
 let engine
 try {
+    boot.start('engine')
+    // Download the engine with progress; the import below reads it from the HTTP cache.
+    let engineBytes = 0
+    await fetchBytes(ENGINE_URL, (fraction, received, total) => {
+        engineBytes = total
+        boot.progress('engine', fraction, `${formatBytes(received)} of ${formatBytes(total)}`)
+    }).catch(err => console.warn('[timeline] engine prefetch failed', err))
     engine = await import('./noisemaker/bundle.js')
+    boot.done('engine', engineBytes ? formatBytes(engineBytes) : '')
 } catch (err) {
     console.error(err)
-    bootFailed('The Noisemaker engine did not load. Check your connection and reload the page.')
+    boot.fail('The Noisemaker engine did not load. Check your connection and reload the page.')
     throw err
 }
+
+boot.start('editor')
 
 const { Store } = await import('./store.js')
 const { AudioEngine } = await import('./audio/engine.js')
@@ -48,6 +54,7 @@ const { frameAt, beatSeconds, barSeconds, clamp } = await import('./model/time.j
 const { loadProject, listProjects, readPrefs, writePrefs, saveProject } = await import('./storage/db.js')
 const { projectToFile, projectFromFile, PROJECT_EXTENSION } = await import('./storage/projectFile.js')
 const { exportSequence } = await import('./export/exporter.js')
+boot.done('editor')
 
 const store = new Store()
 const audio = new AudioEngine({ AudioState: engine.AudioState })
@@ -937,19 +944,44 @@ function resizePreview() {
     dirty = true
 }
 
-async function prepareAudio() {
+/**
+ * Load and decode the sequence's audio, then mix it. `onProgress` receives
+ * { fraction, received, total, files, mixing } while it works.
+ */
+async function prepareAudio({ onProgress } = {}) {
     const seq = store.seq
     if (!seq) return
     const project = store.project
+    const ids = [...new Set(seq.audioTracks.flatMap(t => t.clips.map(c => c.mediaId)))].filter(id => project.media[id])
+    const parts = new Map(ids.map(id => [id, { fraction: 0, received: 0, total: 0 }]))
+    const report = extra => {
+        let fraction = 0
+        let received = 0
+        let total = 0
+        for (const part of parts.values()) {
+            fraction += part.fraction / Math.max(1, parts.size)
+            received += part.received || 0
+            total += part.total || 0
+        }
+        onProgress?.({ fraction: 0.95 * (ids.length ? fraction : 1), received, total, files: ids.length, ...extra })
+    }
+    report()
     // Decode media first so waveforms can draw while the mix renders.
     const failed = []
-    await Promise.all(seq.audioTracks.flatMap(t => t.clips.map(c => getAudioBuffer(project.media[c.mediaId]).catch(err => {
+    await Promise.all(ids.map(id => getAudioBuffer(project.media[id], {
+        onProgress: p => {
+            Object.assign(parts.get(id), p)
+            report()
+        },
+    }).catch(err => {
         failed.push(err)
         return null
-    }))))
+    })))
     if (failed.length) actions.status(failed[0]?.message || 'Some audio could not be loaded')
     timeline.render()
+    report({ mixing: true })
     await audio.mix(project, seq)
+    onProgress?.({ fraction: 1, received: 0, total: 0, files: ids.length, done: true })
     dirty = true
 }
 
@@ -1015,7 +1047,7 @@ function frame(now) {
 // --- boot ------------------------------------------------------------------------------
 
 initEscapeHandler()
-setBoot('Opening your project')
+boot.start('project')
 let project = null
 try {
     const last = prefs.lastProjectId ? await loadProject(prefs.lastProjectId) : null
@@ -1031,6 +1063,7 @@ if (!project) {
     try { await saveProject(project) } catch { /* storage unavailable; the project still works */ }
 }
 store.openProject(project)
+boot.done('project', project.name)
 if (firstVisit) {
     // Open the demo on its drop rather than on the fade from black.
     const drop = store.seq.markers.find(m => m.name === 'Drop')
@@ -1039,13 +1072,30 @@ if (firstVisit) {
 resizePreview()
 timeline.zoomToFit()
 refreshChrome()
-setBoot('Rendering the soundtrack')
-await prepareAudio()
+// The soundtrack and the programs at the playhead load at the same time.
+boot.start('audio')
+boot.start('programs')
+let audioBytes = 0
+const audioReady = prepareAudio({
+    onProgress: ({ fraction, received, total, files, mixing, done }) => {
+        if (total) audioBytes = total
+        if (done) return boot.done('audio', !files ? 'none' : audioBytes ? formatBytes(audioBytes) : `${files} ${files === 1 ? 'file' : 'files'}`)
+        const detail = !files ? '' : mixing ? 'mixing' : total && received < total ? `${formatBytes(received)} of ${formatBytes(total)}` : 'decoding'
+        boot.progress('audio', fraction, detail)
+    },
+})
+const PROGRAMS_WAIT_MS = 30000
+const programsReady = Promise.race([
+    renderer.prepareFrame(store.seq, store.playhead, (done, total) => {
+        boot.progress('programs', total ? done / total : 1, `${done} of ${total}`)
+    }).then(({ total }) => boot.done('programs', `${total} compiled`)),
+    // Never hold the editor back on a slow compile; the monitor shows what is still compiling.
+    new Promise(resolve => setTimeout(resolve, PROGRAMS_WAIT_MS)).then(() => boot.done('programs', 'still compiling')),
+])
+await Promise.all([audioReady, programsReady])
 initializeTooltips?.()
 app.dataset.state = 'ready'
-const boot = document.getElementById('boot')
-boot.classList.add('is-done')
-setTimeout(() => { boot.hidden = true }, 450)
+boot.finish()
 requestAnimationFrame(frame)
 
 // Automation surface for the end-to-end suite and for scripting from the console.
