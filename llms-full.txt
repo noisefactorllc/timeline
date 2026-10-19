@@ -1,0 +1,932 @@
+# Timeline -- Agent guide
+
+> Timeline (https://timeline.noisedeck.app) is the Noise Factor audio reactive video editor. It cuts
+> Noisemaker programs, text, images and video to music, and exports MP4 or
+> WebM. An agent makes a video by writing a project folder that the person
+> opens in Timeline, and checks, snapshots and renders it with a command-line
+> tool. This file is everything the agent needs; it is the same guide as the
+> Timeline plugin for Claude Code.
+
+The full guide adds the project schema: https://timeline.noisedeck.app/llms-full.txt
+
+Agents in Claude Code can install the plugin instead of reading this file:
+`/plugin marketplace add noisefactorllc/timeline`, then
+`/plugin install timeline@noisefactor-timeline`.
+
+Other Noise Factor apps an agent can control: Noisedeck
+(https://noisedeck.app/llms-full.txt), Polymorphic
+(https://polymorphic.noisedeck.app/llms.txt), Visualize
+(https://visualize.noisedeck.app/llms.txt) and HD4
+(https://hd4.noisefactor.io/llms.txt).
+
+Timeline cuts Noisemaker programs to music on a timeline. A video is a **project folder**: a `project.json` and the media files it names. You write the folder. The person watches it take shape in Timeline, and the command-line tool checks it, snapshots frames and renders it.
+
+Media never leaves the computer. Timeline reads the folder inside the browser, and the tool answers Timeline's requests for the folder's files from disk. Never upload the person's media or send it anywhere.
+
+## The tool
+
+Get the tool with `curl -fsSLO https://timeline.noisedeck.app/cli/timeline.mjs` and run it as `node timeline.mjs`. It needs Node 22 or later and Google Chrome (set `CHROME_PATH` for another Chromium). It has no other dependencies. It runs the real Timeline in Chrome on this computer and answers Chrome's requests for the folder's files from disk, so nothing is uploaded.
+
+| Command | What it does |
+|---|---|
+| `node timeline.mjs check <folder>` | Reads the project, compiles every program, transition and post chain, loads every media file, font and effect. Lists errors (exit 1) and warnings. |
+| `node timeline.mjs snapshot <folder> --at 2,8.5,0:31` | Writes PNG frames to `<folder>/snapshots`, rendered exactly as export renders them. Add `--scale 0.5` for speed. Look at every frame you make. |
+| `node timeline.mjs render <folder>` | Writes the video to `<folder>/renders/<sequence>.mp4`. Options: `--from 0:10 --to 0:20`, `--scale 0.5`, `--format webm`, `--quality medium\|high\|best`, `--no-audio`, `--out FILE`. |
+
+Every command takes `--json` for output you can parse, and `--sequence NAME` to choose a sequence other than the main one.
+
+## Working with the person
+
+1. **Settle the brief.** Ask about the length, the frame size (16:9, square or vertical), the music, the words on screen, and the look. When a number is missing, ask for that one number rather than guessing.
+2. **Make the folder.** Create `project.json`, and copy the person's files into `media/`.
+3. **Have them open it.** In Chrome or Edge, at https://timeline.noisedeck.app, they choose File, then Open folder. Your changes to the folder appear within a second, and their edits save back into the same `project.json`. Read the file again before each change so you never write over their work. They can also make the whole video by hand; the folder is only one way in.
+4. **Build in passes.** Start with the music and tempo, then the cut (a program per section, on bars). Then add words and logos, then audio levels and ducking, then the post chain.
+5. **Check every pass.** Run `check` and fix every error. Snapshot the moments that matter, such as each cut, each title and each drop, and look at the frames before going on.
+6. **Deliver.** Render a half-size preview first, then the full render. If there is narration, the person can approve the sound first with File, then Export audio.
+
+## project.json
+
+The full format, with every field, default and rule, is the JSON schema at https://timeline.noisedeck.app/schema/project.schema.json, which https://timeline.noisedeck.app/llms-full.txt also contains. Only `sequences` is required, and anything left out gets a default. Here is a short music video:
+
+```json
+{
+  "name": "Night drive",
+  "media": {
+    "song": { "path": "media/song.mp3" },
+    "logo": { "path": "media/logo.svg" }
+  },
+  "sequences": {
+    "main": {
+      "duration": 32, "bpm": 120, "width": 1920, "height": 1080, "fps": 30,
+      "post": { "preset": "cinema" },
+      "markers": [{ "time": 16, "name": "Drop" }],
+      "tracks": [
+        { "name": "V1", "clips": [
+          { "id": "intro", "name": "Intro", "start": 0, "duration": 16, "loop": 8,
+            "dsl": "search synth, filter\nnoise(octaves: 3, ridges: true, colorMode: rgb)\n  .bloom(intensity: audio(band: audioBand.low, min: 0.05, max: 0.3))\n  .write(o0)\nrender(o0)" },
+          { "id": "drop", "name": "Drop", "start": 16, "duration": 16, "loop": 4,
+            "dsl": "search synth, filter\ncell(scale: audio(band: audioBand.low, min: 0.2, max: 0.6, channel: 1))\n  .write(o0)\nrender(o0)" }
+        ], "transitions": [
+          { "from": "intro", "to": "drop", "duration": 1, "preset": "flash" }
+        ] },
+        { "name": "Titles", "clips": [
+          { "text": "NIGHT DRIVE", "start": 1, "duration": 6, "font": "Space Grotesk", "size": 0.12, "y": 0.45,
+            "enter": { "preset": "rise", "duration": 0.8, "ease": "expo.out" }, "exit": "fade" },
+          { "mediaId": "logo", "start": 28, "duration": 4, "scale": 0.3, "enter": "scale" }
+        ] }
+      ],
+      "audioTracks": [
+        { "name": "Music", "clips": [{ "mediaId": "song", "start": 0, "duration": 32, "fadeOut": 2 }] }
+      ]
+    }
+  }
+}
+```
+
+**Time and tracks**
+- Times are in seconds. A beat lasts 60 / bpm seconds, and a bar lasts a beat × `beatsPerBar` (4 by default). Put cuts and titles on bars and beats.
+- `tracks[0]` is V1, at the bottom. Later tracks draw over earlier ones, so titles and logos go on a track above the pictures.
+- Clips on one track must not overlap.
+- A transition sits on the cut between two clips on its track, and names them by `id`.
+- Give a clip an `id` whenever something refers to it.
+
+## Programs (the Noisemaker DSL)
+
+- **Shape:** a program begins with a `search` line naming the namespaces it uses, such as `search synth, filter`. It writes to `o0` and ends with `render(o0)`. The DSL is not GLSL.
+- **Sources:**
+  - Curated programs: https://visualize.noisedeck.app/data/programs.json, where each entry has a `title`, `tags` and its `dsl`.
+  - Every effect and its parameters: https://shaders.noisedeck.app/1/effects/manifest.json.
+  - The language: https://docs.noisemaker.app/shaders/language/ and https://noisemaker.app/llms-full.txt.
+- **Sound:** put `audio(band: audioBand.low, min: 0.2, max: 0.8)` where a number goes.
+  - Bands are `low`, `mid`, `high` and `vol`.
+  - `min` and `max` are fractions of the parameter's range.
+  - Add `channel: N` to read audio track N alone (the first is 1); without it, the program reads the whole mix.
+  - Muted tracks still drive programs, so a muted drum stem can drive the picture.
+- **Time:** `loop` (seconds) is the length of the program's time cycle. Match it to bars.
+- **Reading the tracks beneath:** a program that calls `media()` reads everything on the tracks beneath it. Use that to run a title, a logo or footage through effects: put the logo on one track and a program such as `search synth, filter\nmedia()\n  .bloom(intensity: 0.8)\n  .write(o0)\nrender(o0)` on the track above it. To treat only the logo, nest the pair in their own sequence, then lay that sequence clip over the pictures with a blend such as `screen`.
+- **The post chain:** every finished frame passes through the post chain. Use `"post": { "preset": "industrial" }` (clean, cinema, industrial, vhs, dream, datamosh, print or lofi), or your own `dsl` that starts from `media()`. Use `"enabled": false` for none.
+- **Transitions:** the presets are dissolve, additive, flash, wipe, iris, hexagons, luma, glitch and refract.
+
+## Words, logos and footage
+
+- **Text:**
+  - Words are in `text`, and `\n` starts a line.
+  - Style it with `font` (any family on https://fonts.noisefactor.io, such as Inter, Space Grotesk, Playfair Display, JetBrains Mono or Orbitron), `weight`, `size` (a fraction of the frame height), `color` and `align`.
+  - `maxWidth` sets where lines wrap, and `background` puts a box behind the text.
+- **Images and video:** use `mediaId` with an image or a video file. `fit` is contain, cover, fill or none. A video's `offset` is where in the file it starts, and `loopVideo` repeats a short file. A video's sound plays only from an audio clip that names the same media.
+- **Placement:** `x` and `y` are fractions of the frame, and 0.5, 0.5 is the centre. `scale` and `rotation` work on every visual clip, so a program can pan and zoom too.
+- **Motion:** `enter` and `exit` take a preset (none, fade, rise, drop, scale, wipe, blur, or type for text) with a `duration` and an `ease`. Eases are named as in GSAP: `power1` to `power4`, `sine`, `expo`, `circ`, `back` or `none`, each with `.in`, `.out` or `.inOut`, as in `expo.out`.
+- **Keyframes:** `keys` animate `opacity`, `x`, `y`, `scale` and `rotation`, for example `"keys": { "x": [{ "t": 0, "v": 0.3 }, { "t": 2, "v": 0.7, "ease": "power2.inOut" }] }`. The `t` is seconds from the clip's start, and each key's ease shapes the move into it.
+- **Captions:** each line is a text clip. A good start is size 0.05, `y` 0.86 and a dark background. The person can also drop a WebVTT or SRT file onto Timeline.
+
+## Sound
+
+- **Level:** `gain` is linear (0.5 is about -6 dB). Clips also take `fadeIn` and `fadeOut` in seconds. `keys.gain` shapes the volume over time.
+- **Ducking:** to sit music under a voice, set `"duck": { "under": "Voice", "depth": -12, "attack": 0.3, "release": 0.75, "hold": 0.5 }` on the music track. The music dips wherever the Voice track is sounding, and gaps shorter than `hold` stay down so pauses do not pump.
+- **Narration and music:** they come from the person, as recordings or files their own tools made. Timeline does not make speech, so place what they give you.
+
+## Custom effects
+
+A custom effect is a portable Noisemaker effect, kept in the folder:
+
+```
+effects/flipTone/definition.json
+effects/flipTone/glsl/flip.glsl
+```
+
+```json
+{ "name": "Flip tone",
+  "globals": { "amount": { "type": "float", "default": 1, "min": 0, "max": 1, "uniform": "amount" } },
+  "passes": [{ "name": "render", "program": "flip", "inputs": { "inputTex": "inputTex" }, "outputs": { "fragColor": "outputTex" } }] }
+```
+
+- **The shader:** in `glsl/flip.glsl` (GLSL ES 3.0), declare `uniform sampler2D inputTex;` and one uniform per global, write to `out vec4 fragColor;`, and find the pixel with `gl_FragCoord.xy / vec2(textureSize(inputTex, 0))`.
+- **Registering:** list the effect in `project.json` as `"effects": { "flipTone": { "path": "effects/flipTone" } }`.
+- **Calling:** add `user` to a program's search line, then call it, as in `search synth, filter, user` and then `.flipTone(amount: 0.5)`.
+- **The format:** see https://docs.noisemaker.app/shaders/effects/.
+- **Iterating:** `check` and `snapshot` start fresh every time, so iterate with them. Timeline registers effects when it opens a project, so after you change an effect's files, the person reloads the page to see the new version.
+
+## Before saying it is done
+
+- `check` passes with no errors, and you have read every warning.
+- The key moments are snapshotted and look right.
+- The render has the length, size and sound asked for.
+- Tell the person what you made, where the files are, and anything you could not do.
+
+## Programs from the person's other apps
+
+A clip's `dsl` is a Noisemaker program, the same language that Noisedeck,
+Polymorphic, Visualize and HD4 run. When the person has Noisedeck, Polymorphic
+or Visualize online, the Seance agent tool reads and writes its program
+(https://noisedeck.app/llms-full.txt explains how to get it and join):
+
+- Use a program from the app in a clip: `node seance-agent.mjs program noisedeck`,
+  then put the text in the clip's `dsl`.
+- Send a clip's program to the app: `node seance-agent.mjs set polymorphic clip.dsl`.
+- An image the program names as `image:<sha256>`:
+  `node seance-agent.mjs image-get noisedeck <sha256> --out media/name` saves it
+  into the folder; refer to it in Timeline by its `path` in `media`.
+
+`check` tells you when a program uses an effect or an argument that Timeline does
+not have.
+
+---
+
+## The project schema
+
+This is https://timeline.noisedeck.app/schema/project.schema.json.
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://timeline.noisedeck.app/schema/project.schema.json",
+  "title": "Timeline project",
+  "description": "project.json in a Timeline project folder. Media files (audio, images, video) sit in the same folder and are named by relative path. Times are in seconds. Only \"sequences\" is required; everything else has a default. Ids are optional: a track, clip, transition or marker without one gets an id from its place, such as \"main/V1/2\". Give a clip an id when a transition names it.",
+  "type": "object",
+  "required": [
+    "sequences"
+  ],
+  "properties": {
+    "schema": {
+      "const": 1,
+      "description": "Format version."
+    },
+    "name": {
+      "type": "string",
+      "description": "Defaults to the folder's name."
+    },
+    "mainSequenceId": {
+      "type": "string",
+      "description": "The sequence that opens and exports. Defaults to the first one."
+    },
+    "sequenceOrder": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "media": {
+      "type": "object",
+      "description": "Media files keyed by id. Audio clips name them in \"mediaId\", and so do image and video clips.",
+      "additionalProperties": {
+        "$ref": "#/$defs/media"
+      }
+    },
+    "sequences": {
+      "type": "object",
+      "minProperties": 1,
+      "description": "Sequences keyed by id. A sequence clip nests one sequence inside another.",
+      "additionalProperties": {
+        "$ref": "#/$defs/sequence"
+      }
+    },
+    "effects": {
+      "type": "object",
+      "description": "Custom effects: Noisemaker portable effects, keyed by the name programs call them by. A program reaches one with user on its search line (search synth, filter, user) and then .name(). Definitions are data; no code from a project runs.",
+      "propertyNames": {
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/effect"
+      }
+    }
+  },
+  "$defs": {
+    "seconds": {
+      "type": "number",
+      "minimum": 0
+    },
+    "media": {
+      "type": "object",
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Relative to the project folder, such as \"media/song.flac\". No \"..\"."
+        },
+        "kind": {
+          "enum": [
+            "audio",
+            "image",
+            "video"
+          ],
+          "description": "Defaults from the extension: wav, mp3, m4a, aac, ogg, opus and flac are audio; png, jpg, webp, gif, svg and avif are images; mp4, m4v, mov, webm and mkv are video."
+        },
+        "name": {
+          "type": "string",
+          "description": "Defaults to the file name without its extension."
+        },
+        "type": {
+          "type": "string",
+          "description": "MIME type; defaults from the extension."
+        },
+        "duration": {
+          "$ref": "#/$defs/seconds",
+          "description": "Length of the file, used as the default length of clips that play it."
+        },
+        "width": {
+          "type": "integer",
+          "description": "Pixel width of an image or video."
+        },
+        "height": {
+          "type": "integer",
+          "description": "Pixel height of an image or video."
+        },
+        "hasAudio": {
+          "type": "boolean",
+          "description": "Whether a video has sound an audio clip can play."
+        }
+      }
+    },
+    "sequence": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Defaults to the sequence's id."
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1920
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1080
+        },
+        "fps": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 30
+        },
+        "duration": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 60
+        },
+        "bpm": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 120,
+          "description": "Tempo of the beat grid. A bar lasts 60 / bpm * beatsPerBar seconds."
+        },
+        "beatsPerBar": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 4
+        },
+        "gridOffset": {
+          "type": "number",
+          "default": 0,
+          "description": "Time of the first beat."
+        },
+        "inPoint": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "default": null
+        },
+        "outPoint": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "default": null
+        },
+        "audioSensitivity": {
+          "type": "number",
+          "default": 1,
+          "description": "Scales what audio() reads from the mix."
+        },
+        "tracks": {
+          "type": "array",
+          "description": "Video tracks, bottom first: tracks[0] is V1 and later tracks draw over it. Defaults to three empty tracks.",
+          "items": {
+            "$ref": "#/$defs/track"
+          }
+        },
+        "audioTracks": {
+          "type": "array",
+          "description": "Audio tracks. In a program, audio(..., channel: N) reads track N alone (channel: 1 is the first); without a channel it reads the mix. Defaults to two empty tracks.",
+          "items": {
+            "$ref": "#/$defs/audioTrack"
+          }
+        },
+        "markers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "time"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "time": {
+                "$ref": "#/$defs/seconds"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "post": {
+          "type": "object",
+          "description": "The post chain: one program that every finished frame passes through. Its media() step reads the frame.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "preset": {
+              "type": "string",
+              "default": "cinema",
+              "description": "A post preset: clean, cinema, industrial, vhs, dream, datamosh, print or lofi. Without \"dsl\" the chain runs the preset's program."
+            },
+            "dsl": {
+              "type": "string",
+              "description": "A custom post program; its media() step reads the finished frame."
+            },
+            "loop": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "default": 8
+            }
+          }
+        }
+      }
+    },
+    "track": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "description": "Defaults to V1, V2 and so on."
+        },
+        "hidden": {
+          "type": "boolean",
+          "default": false
+        },
+        "locked": {
+          "type": "boolean",
+          "default": false
+        },
+        "clips": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/visualClip"
+          }
+        },
+        "transitions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/transition"
+          }
+        }
+      }
+    },
+    "visualClip": {
+      "type": "object",
+      "required": [
+        "start",
+        "duration"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "program",
+            "sequence",
+            "text",
+            "image",
+            "video"
+          ],
+          "description": "Defaults to \"sequence\" with sequenceId, \"text\" with text, \"image\" or \"video\" (by the media's kind) with mediaId, otherwise \"program\"."
+        },
+        "name": {
+          "type": "string"
+        },
+        "start": {
+          "$ref": "#/$defs/seconds"
+        },
+        "duration": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "offset": {
+          "type": "number",
+          "default": 0,
+          "description": "Seconds into the program's or nested sequence's own time, or into a video file, where the clip begins."
+        },
+        "dsl": {
+          "type": "string",
+          "description": "A Noisemaker DSL program; required for program clips. media() reads the tracks beneath the clip."
+        },
+        "loop": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 8,
+          "description": "The program's loop length in seconds: its time runs from 0 to this, then repeats."
+        },
+        "sequenceId": {
+          "type": "string",
+          "description": "For a sequence clip, the sequence it plays."
+        },
+        "loopSequence": {
+          "type": "boolean",
+          "default": true
+        },
+        "opacity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 1
+        },
+        "blend": {
+          "enum": [
+            "normal",
+            "add",
+            "screen",
+            "multiply",
+            "overlay",
+            "lighten",
+            "darken",
+            "difference",
+            "exclusion",
+            "color-dodge",
+            "color-burn",
+            "hard-light",
+            "soft-light",
+            "hue",
+            "saturation",
+            "color",
+            "luminosity"
+          ],
+          "default": "normal",
+          "description": "How the clip combines with the tracks below it."
+        },
+        "tint": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Display colour of the clip on the timeline."
+        },
+        "mediaId": {
+          "type": "string",
+          "description": "For an image or video clip, a key of the project's \"media\"."
+        },
+        "fit": {
+          "enum": [
+            "contain",
+            "cover",
+            "fill",
+            "none"
+          ],
+          "default": "contain",
+          "description": "How an image or video fills the frame before its scale applies; none shows it at its own pixel size."
+        },
+        "loopVideo": {
+          "type": "boolean",
+          "default": false,
+          "description": "A video clip longer than its file repeats it instead of holding the last frame."
+        },
+        "x": {
+          "type": "number",
+          "default": 0.5,
+          "description": "Horizontal position as a fraction of the frame width: 0 is the left edge, 1 the right. On a program or nested sequence it moves the whole picture's centre."
+        },
+        "y": {
+          "type": "number",
+          "default": 0.5,
+          "description": "Vertical position as a fraction of the frame height: 0 is the top, 1 the bottom."
+        },
+        "scale": {
+          "type": "number",
+          "minimum": 0,
+          "default": 1,
+          "description": "Size multiplier; 1 is the clip's natural size in the frame. On a program or nested sequence it zooms the whole picture."
+        },
+        "rotation": {
+          "type": "number",
+          "default": 0,
+          "description": "Degrees, clockwise."
+        },
+        "enter": {
+          "$ref": "#/$defs/motion",
+          "description": "How a graphic arrives. Text defaults to fade; images and video to none. A string is taken as the preset."
+        },
+        "exit": {
+          "$ref": "#/$defs/motion",
+          "description": "How a graphic leaves, ending at the clip's end."
+        },
+        "text": {
+          "type": "string",
+          "description": "The words of a text clip; \\n starts a new line, and long lines wrap at maxWidth."
+        },
+        "font": {
+          "type": "string",
+          "default": "Inter",
+          "description": "A family on the Noise Factor font service (fonts.noisefactor.io), such as Inter, Space Grotesk, Playfair Display, JetBrains Mono, Orbitron or Bungee."
+        },
+        "weight": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 1000,
+          "default": 700
+        },
+        "italic": {
+          "type": "boolean",
+          "default": false
+        },
+        "size": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 0.09,
+          "description": "Text height as a fraction of the frame height."
+        },
+        "lineHeight": {
+          "type": "number",
+          "default": 1.1,
+          "description": "Line spacing as a multiple of the size."
+        },
+        "letterSpacing": {
+          "type": "number",
+          "default": 0,
+          "description": "Extra space between letters as a fraction of the size."
+        },
+        "color": {
+          "type": "string",
+          "default": "#ffffff",
+          "description": "Any CSS colour."
+        },
+        "align": {
+          "enum": [
+            "left",
+            "center",
+            "right"
+          ],
+          "default": "center",
+          "description": "Alignment of the lines; the block is anchored at x by its left edge, centre or right edge."
+        },
+        "maxWidth": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 0.8,
+          "description": "Wrap width as a fraction of the frame width."
+        },
+        "background": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "A CSS colour for a box behind the text, or null for none."
+        },
+        "keys": {
+          "type": "object",
+          "description": "Keyframes. Each property holds its value before the first key and after the last, and eases between keys.",
+          "properties": {
+            "opacity": {
+              "$ref": "#/$defs/keyList"
+            },
+            "x": {
+              "$ref": "#/$defs/keyList"
+            },
+            "y": {
+              "$ref": "#/$defs/keyList"
+            },
+            "scale": {
+              "$ref": "#/$defs/keyList"
+            },
+            "rotation": {
+              "$ref": "#/$defs/keyList"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "description": "A clip on a video track. Program clips run a Noisemaker DSL program; a program that reads media() reads the composite of the tracks beneath it. Sequence clips nest a sequence. Text, image and video clips are graphics: drawn with transparency over the tracks beneath at a position, scale and rotation, with enter and exit motion."
+    },
+    "transition": {
+      "type": "object",
+      "description": "A transition on the cut between two adjacent clips on one track. Without \"from\" it fades \"to\" in from black; without \"to\" it fades \"from\" out to black.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Id of the outgoing clip."
+        },
+        "to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Id of the incoming clip."
+        },
+        "duration": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 1
+        },
+        "preset": {
+          "type": "string",
+          "default": "dissolve",
+          "description": "A transition from the library, such as dissolve, luma, glitch, flash, iris, wipe, hexagons or refract."
+        },
+        "dsl": {
+          "type": "string",
+          "default": "",
+          "description": "A custom transition program; empty uses the preset's."
+        }
+      }
+    },
+    "audioTrack": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "description": "Defaults to A1, A2 and so on."
+        },
+        "muted": {
+          "type": "boolean",
+          "default": false,
+          "description": "Silences the track; programs still read it."
+        },
+        "solo": {
+          "type": "boolean",
+          "default": false
+        },
+        "gain": {
+          "type": "number",
+          "minimum": 0,
+          "default": 1
+        },
+        "clips": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/audioClip"
+          }
+        },
+        "duck": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Dip this whole track while another audio track sounds, such as music under a voice. The dip is an exact curve built from where the other track is louder than threshold (or, with detect: clips, from where its clips are).",
+          "required": [
+            "under"
+          ],
+          "properties": {
+            "under": {
+              "type": "string",
+              "description": "Name or id of the audio track whose clips trigger the dip."
+            },
+            "depth": {
+              "type": "number",
+              "maximum": 0,
+              "default": -12,
+              "description": "How far it dips, in dB."
+            },
+            "attack": {
+              "type": "number",
+              "minimum": 0,
+              "default": 0.3,
+              "description": "Seconds it takes to dip, ending as a clip starts."
+            },
+            "release": {
+              "type": "number",
+              "minimum": 0,
+              "default": 0.75,
+              "description": "Seconds it takes to come back after a clip ends."
+            },
+            "hold": {
+              "type": "number",
+              "minimum": 0,
+              "default": 0.5,
+              "description": "Gaps in the other track shorter than this stay dipped, so pauses between lines do not pump."
+            },
+            "threshold": {
+              "type": "number",
+              "maximum": 0,
+              "default": -45,
+              "description": "The other track counts as sounding above this level, in dB."
+            },
+            "detect": {
+              "enum": [
+                "signal",
+                "clips"
+              ],
+              "default": "signal",
+              "description": "signal dips where the other track sounds; clips dips for the whole of each of its clips."
+            }
+          }
+        }
+      }
+    },
+    "audioClip": {
+      "type": "object",
+      "required": [
+        "mediaId",
+        "start"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "mediaId": {
+          "type": "string",
+          "description": "A key of the project's \"media\": an audio file, or a video whose sound plays."
+        },
+        "name": {
+          "type": "string"
+        },
+        "start": {
+          "$ref": "#/$defs/seconds"
+        },
+        "duration": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Defaults to the file's length when media lists it, otherwise to the end of the sequence."
+        },
+        "offset": {
+          "$ref": "#/$defs/seconds",
+          "default": 0,
+          "description": "Seconds into the file where the clip begins."
+        },
+        "gain": {
+          "type": "number",
+          "minimum": 0,
+          "default": 1,
+          "description": "Linear volume; 0.5 is about -6 dB."
+        },
+        "fadeIn": {
+          "$ref": "#/$defs/seconds",
+          "default": 0
+        },
+        "fadeOut": {
+          "$ref": "#/$defs/seconds",
+          "default": 0
+        },
+        "keys": {
+          "type": "object",
+          "description": "Volume keyframes: gain over time, linear, multiplied with the fades.",
+          "properties": {
+            "gain": {
+              "$ref": "#/$defs/keyList"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "motion": {
+      "type": [
+        "object",
+        "string"
+      ],
+      "properties": {
+        "preset": {
+          "enum": [
+            "none",
+            "fade",
+            "rise",
+            "drop",
+            "scale",
+            "wipe",
+            "blur",
+            "type"
+          ],
+          "description": "type reveals text a letter at a time; on an image or video it fades."
+        },
+        "duration": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0.5,
+          "description": "Seconds; an exit defaults to 0.4."
+        },
+        "ease": {
+          "type": "string",
+          "description": "An easing curve named like GSAP's: none, or power1 to power4, sine, expo, circ or back, followed by .in, .out or .inOut (power3.out). Enter defaults to power3.out, exit to power2.in."
+        }
+      }
+    },
+    "key": {
+      "type": "object",
+      "required": [
+        "t",
+        "v"
+      ],
+      "properties": {
+        "t": {
+          "type": "number",
+          "description": "Seconds from the clip's start."
+        },
+        "v": {
+          "type": "number",
+          "description": "The value at that time."
+        },
+        "ease": {
+          "type": "string",
+          "default": "power2.inOut",
+          "description": "Shapes the change into this key from the key before, named like GSAP eases (power3.out, expo.inOut, none)."
+        }
+      }
+    },
+    "keyList": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/key"
+      }
+    },
+    "effect": {
+      "type": "object",
+      "description": "A folder path holding definition.json, glsl/<program>.glsl and optionally wgsl/<program>.wgsl, or the same inline.",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Relative to the project folder, such as effects/flipTone."
+        },
+        "definition": {
+          "type": "object",
+          "description": "A portable effect definition: globals (its parameters) and passes, each naming a shader program with its inputs and outputs. Like Noisemaker's own effects, a filter's pass reads inputTex and writes outputTex."
+        },
+        "shaders": {
+          "type": "object",
+          "description": "Shader source per program: { program: { glsl, wgsl } }.",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "glsl": {
+                "type": "string"
+              },
+              "wgsl": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```

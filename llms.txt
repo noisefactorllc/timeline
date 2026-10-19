@@ -1,0 +1,171 @@
+# Timeline -- Agent guide
+
+> Timeline (https://timeline.noisedeck.app) is the Noise Factor audio reactive video editor. It cuts
+> Noisemaker programs, text, images and video to music, and exports MP4 or
+> WebM. An agent makes a video by writing a project folder that the person
+> opens in Timeline, and checks, snapshots and renders it with a command-line
+> tool. This file is everything the agent needs; it is the same guide as the
+> Timeline plugin for Claude Code.
+
+The full guide adds the project schema: https://timeline.noisedeck.app/llms-full.txt
+
+Agents in Claude Code can install the plugin instead of reading this file:
+`/plugin marketplace add noisefactorllc/timeline`, then
+`/plugin install timeline@noisefactor-timeline`.
+
+Other Noise Factor apps an agent can control: Noisedeck
+(https://noisedeck.app/llms-full.txt), Polymorphic
+(https://polymorphic.noisedeck.app/llms.txt), Visualize
+(https://visualize.noisedeck.app/llms.txt) and HD4
+(https://hd4.noisefactor.io/llms.txt).
+
+Timeline cuts Noisemaker programs to music on a timeline. A video is a **project folder**: a `project.json` and the media files it names. You write the folder. The person watches it take shape in Timeline, and the command-line tool checks it, snapshots frames and renders it.
+
+Media never leaves the computer. Timeline reads the folder inside the browser, and the tool answers Timeline's requests for the folder's files from disk. Never upload the person's media or send it anywhere.
+
+## The tool
+
+Get the tool with `curl -fsSLO https://timeline.noisedeck.app/cli/timeline.mjs` and run it as `node timeline.mjs`. It needs Node 22 or later and Google Chrome (set `CHROME_PATH` for another Chromium). It has no other dependencies. It runs the real Timeline in Chrome on this computer and answers Chrome's requests for the folder's files from disk, so nothing is uploaded.
+
+| Command | What it does |
+|---|---|
+| `node timeline.mjs check <folder>` | Reads the project, compiles every program, transition and post chain, loads every media file, font and effect. Lists errors (exit 1) and warnings. |
+| `node timeline.mjs snapshot <folder> --at 2,8.5,0:31` | Writes PNG frames to `<folder>/snapshots`, rendered exactly as export renders them. Add `--scale 0.5` for speed. Look at every frame you make. |
+| `node timeline.mjs render <folder>` | Writes the video to `<folder>/renders/<sequence>.mp4`. Options: `--from 0:10 --to 0:20`, `--scale 0.5`, `--format webm`, `--quality medium\|high\|best`, `--no-audio`, `--out FILE`. |
+
+Every command takes `--json` for output you can parse, and `--sequence NAME` to choose a sequence other than the main one.
+
+## Working with the person
+
+1. **Settle the brief.** Ask about the length, the frame size (16:9, square or vertical), the music, the words on screen, and the look. When a number is missing, ask for that one number rather than guessing.
+2. **Make the folder.** Create `project.json`, and copy the person's files into `media/`.
+3. **Have them open it.** In Chrome or Edge, at https://timeline.noisedeck.app, they choose File, then Open folder. Your changes to the folder appear within a second, and their edits save back into the same `project.json`. Read the file again before each change so you never write over their work. They can also make the whole video by hand; the folder is only one way in.
+4. **Build in passes.** Start with the music and tempo, then the cut (a program per section, on bars). Then add words and logos, then audio levels and ducking, then the post chain.
+5. **Check every pass.** Run `check` and fix every error. Snapshot the moments that matter, such as each cut, each title and each drop, and look at the frames before going on.
+6. **Deliver.** Render a half-size preview first, then the full render. If there is narration, the person can approve the sound first with File, then Export audio.
+
+## project.json
+
+The full format, with every field, default and rule, is the JSON schema at https://timeline.noisedeck.app/schema/project.schema.json, which https://timeline.noisedeck.app/llms-full.txt also contains. Only `sequences` is required, and anything left out gets a default. Here is a short music video:
+
+```json
+{
+  "name": "Night drive",
+  "media": {
+    "song": { "path": "media/song.mp3" },
+    "logo": { "path": "media/logo.svg" }
+  },
+  "sequences": {
+    "main": {
+      "duration": 32, "bpm": 120, "width": 1920, "height": 1080, "fps": 30,
+      "post": { "preset": "cinema" },
+      "markers": [{ "time": 16, "name": "Drop" }],
+      "tracks": [
+        { "name": "V1", "clips": [
+          { "id": "intro", "name": "Intro", "start": 0, "duration": 16, "loop": 8,
+            "dsl": "search synth, filter\nnoise(octaves: 3, ridges: true, colorMode: rgb)\n  .bloom(intensity: audio(band: audioBand.low, min: 0.05, max: 0.3))\n  .write(o0)\nrender(o0)" },
+          { "id": "drop", "name": "Drop", "start": 16, "duration": 16, "loop": 4,
+            "dsl": "search synth, filter\ncell(scale: audio(band: audioBand.low, min: 0.2, max: 0.6, channel: 1))\n  .write(o0)\nrender(o0)" }
+        ], "transitions": [
+          { "from": "intro", "to": "drop", "duration": 1, "preset": "flash" }
+        ] },
+        { "name": "Titles", "clips": [
+          { "text": "NIGHT DRIVE", "start": 1, "duration": 6, "font": "Space Grotesk", "size": 0.12, "y": 0.45,
+            "enter": { "preset": "rise", "duration": 0.8, "ease": "expo.out" }, "exit": "fade" },
+          { "mediaId": "logo", "start": 28, "duration": 4, "scale": 0.3, "enter": "scale" }
+        ] }
+      ],
+      "audioTracks": [
+        { "name": "Music", "clips": [{ "mediaId": "song", "start": 0, "duration": 32, "fadeOut": 2 }] }
+      ]
+    }
+  }
+}
+```
+
+**Time and tracks**
+- Times are in seconds. A beat lasts 60 / bpm seconds, and a bar lasts a beat × `beatsPerBar` (4 by default). Put cuts and titles on bars and beats.
+- `tracks[0]` is V1, at the bottom. Later tracks draw over earlier ones, so titles and logos go on a track above the pictures.
+- Clips on one track must not overlap.
+- A transition sits on the cut between two clips on its track, and names them by `id`.
+- Give a clip an `id` whenever something refers to it.
+
+## Programs (the Noisemaker DSL)
+
+- **Shape:** a program begins with a `search` line naming the namespaces it uses, such as `search synth, filter`. It writes to `o0` and ends with `render(o0)`. The DSL is not GLSL.
+- **Sources:**
+  - Curated programs: https://visualize.noisedeck.app/data/programs.json, where each entry has a `title`, `tags` and its `dsl`.
+  - Every effect and its parameters: https://shaders.noisedeck.app/1/effects/manifest.json.
+  - The language: https://docs.noisemaker.app/shaders/language/ and https://noisemaker.app/llms-full.txt.
+- **Sound:** put `audio(band: audioBand.low, min: 0.2, max: 0.8)` where a number goes.
+  - Bands are `low`, `mid`, `high` and `vol`.
+  - `min` and `max` are fractions of the parameter's range.
+  - Add `channel: N` to read audio track N alone (the first is 1); without it, the program reads the whole mix.
+  - Muted tracks still drive programs, so a muted drum stem can drive the picture.
+- **Time:** `loop` (seconds) is the length of the program's time cycle. Match it to bars.
+- **Reading the tracks beneath:** a program that calls `media()` reads everything on the tracks beneath it. Use that to run a title, a logo or footage through effects: put the logo on one track and a program such as `search synth, filter\nmedia()\n  .bloom(intensity: 0.8)\n  .write(o0)\nrender(o0)` on the track above it. To treat only the logo, nest the pair in their own sequence, then lay that sequence clip over the pictures with a blend such as `screen`.
+- **The post chain:** every finished frame passes through the post chain. Use `"post": { "preset": "industrial" }` (clean, cinema, industrial, vhs, dream, datamosh, print or lofi), or your own `dsl` that starts from `media()`. Use `"enabled": false` for none.
+- **Transitions:** the presets are dissolve, additive, flash, wipe, iris, hexagons, luma, glitch and refract.
+
+## Words, logos and footage
+
+- **Text:**
+  - Words are in `text`, and `\n` starts a line.
+  - Style it with `font` (any family on https://fonts.noisefactor.io, such as Inter, Space Grotesk, Playfair Display, JetBrains Mono or Orbitron), `weight`, `size` (a fraction of the frame height), `color` and `align`.
+  - `maxWidth` sets where lines wrap, and `background` puts a box behind the text.
+- **Images and video:** use `mediaId` with an image or a video file. `fit` is contain, cover, fill or none. A video's `offset` is where in the file it starts, and `loopVideo` repeats a short file. A video's sound plays only from an audio clip that names the same media.
+- **Placement:** `x` and `y` are fractions of the frame, and 0.5, 0.5 is the centre. `scale` and `rotation` work on every visual clip, so a program can pan and zoom too.
+- **Motion:** `enter` and `exit` take a preset (none, fade, rise, drop, scale, wipe, blur, or type for text) with a `duration` and an `ease`. Eases are named as in GSAP: `power1` to `power4`, `sine`, `expo`, `circ`, `back` or `none`, each with `.in`, `.out` or `.inOut`, as in `expo.out`.
+- **Keyframes:** `keys` animate `opacity`, `x`, `y`, `scale` and `rotation`, for example `"keys": { "x": [{ "t": 0, "v": 0.3 }, { "t": 2, "v": 0.7, "ease": "power2.inOut" }] }`. The `t` is seconds from the clip's start, and each key's ease shapes the move into it.
+- **Captions:** each line is a text clip. A good start is size 0.05, `y` 0.86 and a dark background. The person can also drop a WebVTT or SRT file onto Timeline.
+
+## Sound
+
+- **Level:** `gain` is linear (0.5 is about -6 dB). Clips also take `fadeIn` and `fadeOut` in seconds. `keys.gain` shapes the volume over time.
+- **Ducking:** to sit music under a voice, set `"duck": { "under": "Voice", "depth": -12, "attack": 0.3, "release": 0.75, "hold": 0.5 }` on the music track. The music dips wherever the Voice track is sounding, and gaps shorter than `hold` stay down so pauses do not pump.
+- **Narration and music:** they come from the person, as recordings or files their own tools made. Timeline does not make speech, so place what they give you.
+
+## Custom effects
+
+A custom effect is a portable Noisemaker effect, kept in the folder:
+
+```
+effects/flipTone/definition.json
+effects/flipTone/glsl/flip.glsl
+```
+
+```json
+{ "name": "Flip tone",
+  "globals": { "amount": { "type": "float", "default": 1, "min": 0, "max": 1, "uniform": "amount" } },
+  "passes": [{ "name": "render", "program": "flip", "inputs": { "inputTex": "inputTex" }, "outputs": { "fragColor": "outputTex" } }] }
+```
+
+- **The shader:** in `glsl/flip.glsl` (GLSL ES 3.0), declare `uniform sampler2D inputTex;` and one uniform per global, write to `out vec4 fragColor;`, and find the pixel with `gl_FragCoord.xy / vec2(textureSize(inputTex, 0))`.
+- **Registering:** list the effect in `project.json` as `"effects": { "flipTone": { "path": "effects/flipTone" } }`.
+- **Calling:** add `user` to a program's search line, then call it, as in `search synth, filter, user` and then `.flipTone(amount: 0.5)`.
+- **The format:** see https://docs.noisemaker.app/shaders/effects/.
+- **Iterating:** `check` and `snapshot` start fresh every time, so iterate with them. Timeline registers effects when it opens a project, so after you change an effect's files, the person reloads the page to see the new version.
+
+## Before saying it is done
+
+- `check` passes with no errors, and you have read every warning.
+- The key moments are snapshotted and look right.
+- The render has the length, size and sound asked for.
+- Tell the person what you made, where the files are, and anything you could not do.
+
+## Programs from the person's other apps
+
+A clip's `dsl` is a Noisemaker program, the same language that Noisedeck,
+Polymorphic, Visualize and HD4 run. When the person has Noisedeck, Polymorphic
+or Visualize online, the Seance agent tool reads and writes its program
+(https://noisedeck.app/llms-full.txt explains how to get it and join):
+
+- Use a program from the app in a clip: `node seance-agent.mjs program noisedeck`,
+  then put the text in the clip's `dsl`.
+- Send a clip's program to the app: `node seance-agent.mjs set polymorphic clip.dsl`.
+- An image the program names as `image:<sha256>`:
+  `node seance-agent.mjs image-get noisedeck <sha256> --out media/name` saves it
+  into the folder; refer to it in Timeline by its `path` in `media`.
+
+`check` tells you when a program uses an effect or an argument that Timeline does
+not have.
