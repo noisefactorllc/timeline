@@ -44,10 +44,10 @@ test('importing a song into an empty sequence places it and sets the tempo from 
 test('right-clicking a clip offers split here, which cuts it where you clicked', async ({ page }) => {
     await boot(page)
     const before = await page.evaluate(() => window.__timeline.store.seq.tracks[0].clips.length)
-    const box = await page.locator('.tl-clip', { hasText: 'Kick pulse' }).boundingBox()
+    const box = await page.locator('.tl-clip', { hasText: 'Infrastructure' }).boundingBox()
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { button: 'right' })
     await page.locator('.tl-context-menu .hf-menu-item', { hasText: 'Split here' }).click({ timeout: 120_000 })
-    const after = await page.evaluate(() => window.__timeline.store.seq.tracks[0].clips.filter(c => c.name === 'Kick pulse').length)
+    const after = await page.evaluate(() => window.__timeline.store.seq.tracks[0].clips.filter(c => c.name === 'Infrastructure').length)
     expect(after).toBe(2)
     expect(await page.evaluate(() => window.__timeline.store.seq.tracks[0].clips.length)).toBe(before + 1)
     await expect(page.locator('.tl-context-menu')).toHaveCount(0)

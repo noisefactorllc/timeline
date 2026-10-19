@@ -12,15 +12,15 @@ test('audio() reads each audio track by channel, and the mix without one', async
             tl.audio.feed(seq, t)
             const s = tl.audio.state
             const drums = s.getDefaultChannelState(1)
-            const music = s.getDefaultChannelState(2)
+            const synths = s.getDefaultChannelState(2)
             const named = s.getDeviceChannelState({ name: 'Drums', channel: 1 })
-            return { mix: s.low, drums: drums.low, music: music.mid, named: named.low }
+            return { mix: s.low, drums: drums.low, synths: synths.mid, named: named.low }
         }
-        // Intro: pads only, no drums yet. Build: the first kick lands on bar 9.
+        // Intro: drone and pads, no drums yet. Build: the first kick lands on bar 9.
         return { intro: read(BAR * 2 + 0.01), kick: read(BAR * 8 + 0.03) }
     }, { BAR })
     expect(values.intro.drums).toBe(0)
-    expect(values.intro.music).toBeGreaterThan(0.2)
+    expect(values.intro.synths).toBeGreaterThan(0.2)
     expect(values.kick.drums).toBeGreaterThan(0.3)
     expect(values.kick.named).toBe(values.kick.drums)
     expect(values.kick.mix).toBeGreaterThan(0)
@@ -51,9 +51,9 @@ test('muting a track silences the mix but keeps it driving visuals', async ({ pa
         const from = Math.round(t * 48000)
         const drumsOnly = mix.tracks.get(seq.audioTracks[0].id).getChannelData(0).subarray(from, from + 2400)
         const master = mix.master.getChannelData(0).subarray(from, from + 2400)
-        const music = mix.tracks.get(seq.audioTracks[1].id).getChannelData(0).subarray(from, from + 2400)
+        const synths = mix.tracks.get(seq.audioTracks[1].id).getChannelData(0).subarray(from, from + 2400)
         let diff = 0
-        for (let i = 0; i < master.length; i++) diff = Math.max(diff, Math.abs(master[i] - music[i]))
+        for (let i = 0; i < master.length; i++) diff = Math.max(diff, Math.abs(master[i] - synths[i]))
         tl.audio.feed(seq, t)
         return { diff, drumsPeak: Math.max(...drumsOnly.map(Math.abs)), drumsLow: tl.audio.state.getDefaultChannelState(1).low }
     }, { BAR })

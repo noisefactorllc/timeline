@@ -8,7 +8,7 @@
 
 import { loadMedia, saveMedia } from '../storage/db.js'
 import { uid } from '../model/project.js'
-import { renderDemoStems, DEMO_DURATION } from './demoTrack.js'
+import { renderDemoStems, DEMO_DURATION, DEMO_ID } from './demoTrack.js'
 
 export const SAMPLE_RATE = 48000
 
@@ -25,11 +25,18 @@ function decoder() {
 
 async function generate(recipe) {
     if (recipe.generator === 'demo-track') {
+        if (recipe.demo !== DEMO_ID) throw new Error('This project uses the soundtrack of an earlier demo, which is no longer generated')
         if (!demoStems) demoStems = renderDemoStems()
         const stems = await demoStems
-        return stems[recipe.stem] || stems.music
+        if (!stems[recipe.stem]) throw new Error(`The demo has no ${recipe.stem} stem`)
+        return stems[recipe.stem]
     }
     throw new Error(`Unknown audio generator: ${recipe.generator}`)
+}
+
+/** True for a project made from an earlier demo, whose soundtrack is gone. */
+export function usesEarlierDemo(project) {
+    return Object.values(project?.media || {}).some(m => m.recipe?.generator === 'demo-track' && m.recipe.demo !== DEMO_ID)
 }
 
 /** Decoded AudioBuffer for a project media record (cached). */
@@ -78,13 +85,13 @@ export async function importAudioFile(file) {
 /** Media records for the generated demo stems. */
 export function demoMedia() {
     return {
-        'med_demo_drums': {
-            id: 'med_demo_drums', kind: 'audio', name: 'Demo drums', duration: DEMO_DURATION,
-            recipe: { generator: 'demo-track', stem: 'drums' },
+        'med_refinery_drums': {
+            id: 'med_refinery_drums', kind: 'audio', name: 'Refinery drums', duration: DEMO_DURATION,
+            recipe: { generator: 'demo-track', demo: DEMO_ID, stem: 'drums' },
         },
-        'med_demo_music': {
-            id: 'med_demo_music', kind: 'audio', name: 'Demo music', duration: DEMO_DURATION,
-            recipe: { generator: 'demo-track', stem: 'music' },
+        'med_refinery_synths': {
+            id: 'med_refinery_synths', kind: 'audio', name: 'Refinery synths', duration: DEMO_DURATION,
+            recipe: { generator: 'demo-track', demo: DEMO_ID, stem: 'synths' },
         },
     }
 }

@@ -104,6 +104,8 @@ export function createProgramClip({
     loop = 8,
     offset = 0,
     tint = null,
+    opacity = 1,
+    blend = 'normal',
 } = {}) {
     return {
         id: uid('clp'),
@@ -115,12 +117,14 @@ export function createProgramClip({
         loop,
         dsl,
         tint,
-        opacity: 1,
-        blend: 'normal',
+        opacity,
+        blend,
     }
 }
 
-export function createSequenceClip({ sequenceId, name = 'Sequence', start = 0, duration = 8, offset = 0 } = {}) {
+export function createSequenceClip({
+    sequenceId, name = 'Sequence', start = 0, duration = 8, offset = 0, opacity = 1, blend = 'normal',
+} = {}) {
     return {
         id: uid('clp'),
         type: 'sequence',
@@ -131,8 +135,8 @@ export function createSequenceClip({ sequenceId, name = 'Sequence', start = 0, d
         sequenceId,
         loopSequence: true,
         tint: null,
-        opacity: 1,
-        blend: 'normal',
+        opacity,
+        blend,
     }
 }
 

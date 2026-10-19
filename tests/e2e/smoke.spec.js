@@ -3,11 +3,11 @@ import { boot, settleAt, monitorStats } from './helpers.js'
 
 test('the demo opens with its tracks, transitions, markers and post chain', async ({ page }) => {
     const errors = await boot(page)
-    await expect(page.locator('.tl-clip', { hasText: 'Kick pulse' })).toBeVisible()
+    await expect(page.locator('.tl-clip', { hasText: 'Infrastructure' })).toBeVisible()
     await expect(page.locator('.tl-clip', { hasText: 'Drop' })).toBeVisible()
-    await expect(page.locator('.tl-transition')).toHaveCount(6)
+    await expect(page.locator('.tl-transition')).toHaveCount(7)
     await expect(page.locator('.tl-marker')).toHaveCount(5)
-    await expect(page.locator('.tl-post')).toContainText('Cinema')
+    await expect(page.locator('.tl-post')).toContainText('Industrial')
     await expect(page.locator('.tl-track-header', { hasText: 'Drums' })).toContainText('channel: 1')
     expect(errors).toEqual([])
 })

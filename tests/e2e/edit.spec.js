@@ -5,21 +5,21 @@ const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
 
 test('clicking a clip opens its DSL; editing it recompiles live', async ({ page }) => {
     await boot(page)
-    const clip = page.locator('.tl-clip', { hasText: 'Kick pulse' })
+    const clip = page.locator('.tl-clip', { hasText: 'Infrastructure' })
     await clip.click({ position: { x: 140, y: 40 }, timeout: 120_000 })
-    await expect(page.locator('.tl-insp-title')).toHaveValue('Kick pulse')
+    await expect(page.locator('.tl-insp-title')).toHaveValue('Infrastructure')
     const status = page.locator('.tl-editor-status')
     await page.evaluate(() => {
         const editor = document.querySelector('#inspector code-editor')
-        editor.value = editor.value.replace('tint: #ff4d5e', 'tint: #4dffd2')
+        editor.value = editor.value.replace('index: toxic', 'index: neptune')
         editor.dispatchEvent(new CustomEvent('input', { detail: { value: editor.value } }))
     })
     await expect(status).toHaveText('Running', { timeout: 180_000 })
     const dsl = await page.evaluate(() => {
         const tl = window.__timeline
-        return tl.store.seq.tracks[0].clips.find(c => c.name === 'Kick pulse').dsl
+        return tl.store.seq.tracks[0].clips.find(c => c.name === 'Infrastructure').dsl
     })
-    expect(dsl).toContain('#4dffd2')
+    expect(dsl).toContain('index: neptune')
     // The edit moved the playhead into the clip so the monitor shows it.
     const t = await page.evaluate(() => window.__timeline.store.playhead)
     expect(t).toBeGreaterThanOrEqual(60 / 128 * 4 * 8)
@@ -27,14 +27,14 @@ test('clicking a clip opens its DSL; editing it recompiles live', async ({ page 
 
 test('a broken program reports its error and keeps the last good frame', async ({ page }) => {
     await boot(page)
-    await page.locator('.tl-clip', { hasText: 'Kick pulse' }).click({ position: { x: 140, y: 40 }, timeout: 120_000 })
+    await page.locator('.tl-clip', { hasText: 'Infrastructure' }).click({ position: { x: 140, y: 40 }, timeout: 120_000 })
     await page.evaluate(() => {
         const editor = document.querySelector('#inspector code-editor')
-        editor.value = editor.value.replace('noise(', 'nosie(')
+        editor.value = editor.value.replace('cell(', 'clel(')
         editor.dispatchEvent(new CustomEvent('input', { detail: { value: editor.value } }))
     })
     await expect(page.locator('.tl-editor-status')).toHaveAttribute('data-state', 'error', { timeout: 180_000 })
-    await expect(page.locator('.tl-editor-status')).toContainText('nosie')
+    await expect(page.locator('.tl-editor-status')).toContainText('clel')
 })
 
 test('cut at the playhead, then undo and redo', async ({ page }) => {

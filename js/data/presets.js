@@ -108,6 +108,15 @@ export const POST_PRESETS = [
   .vignette(alpha: 0.6)`),
     },
     {
+        id: 'industrial',
+        name: 'Industrial',
+        dsl: post(`  .grade(contrast: 0.3, blacks: -0.25, saturation: 1.25)
+  .bloom(intensity: audio(band: audioBand.low, min: 0.15, max: 0.6), threshold: 0.6)
+  .chromaticAberration(aberration: audio(band: audioBand.high, min: 0.05, max: 0.4))
+  .grain(alpha: 0.16)
+  .vignette(alpha: 0.7)`),
+    },
+    {
         id: 'vhs',
         name: 'VHS',
         dsl: post(`  .scanlineError(mode: vhs, distortion: audio(band: audioBand.high, min: 0.05, max: 0.4), noise: 0.5)

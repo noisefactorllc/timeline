@@ -189,3 +189,14 @@ test('history undoes and redoes snapshots', () => {
     assert.equal(forward.n, 2)
     assert.equal(h.canRedo, false)
 })
+
+test('clip factories keep blend and opacity', () => {
+    const program = createProgramClip({ blend: 'screen', opacity: 0.4 })
+    assert.equal(program.blend, 'screen')
+    assert.equal(program.opacity, 0.4)
+    const nested = createSequenceClip({ sequenceId: 'seq_x', blend: 'difference', opacity: 0.5 })
+    assert.equal(nested.blend, 'difference')
+    assert.equal(nested.opacity, 0.5)
+    assert.equal(createProgramClip().blend, 'normal')
+    assert.equal(createProgramClip().opacity, 1)
+})

@@ -1,9 +1,12 @@
 /**
  * The demo project: a one-minute music video cut to the generated demo
- * track. Drums sit on A1 and music on A2, so programs bind to the kick
- * with `channel: 1` and to the harmony with `channel: 2`. The drop is a
- * nested sequence that cuts on every bar with its own post chain, inside
- * a main sequence whose post chain blooms on the kick.
+ * track, built only from curated programs that use heightmap3d and
+ * heightGrid. Each program is its curated original with one value wired
+ * to the audio. Drums sit on A1 and synths on A2, so the terrain lifts
+ * on the kick with `channel: 1` and swells with the synths with
+ * `channel: 2`. The drop is a nested sequence that cuts on every bar
+ * with its own post chain, inside a main sequence whose post chain
+ * blooms on the kick and grains every frame.
  */
 
 import {
@@ -12,191 +15,1114 @@ import {
 import { insertClip, addTransition, addMarker } from '../model/edit.js'
 import { transitionPreset, postPreset } from './presets.js'
 import { demoMedia } from '../audio/media.js'
-import { DEMO_BPM, DEMO_DURATION } from '../audio/demoTrack.js'
+import { DEMO_ID, DEMO_BPM, DEMO_DURATION } from '../audio/demoTrack.js'
 
 const BAR = (60 / DEMO_BPM) * 4
 const BEAT = BAR / 4
 
+// Curated programs from the Noisedeck library (`code` is the share code).
 const P = {
-    crystalCave: {
-        name: 'Crystal cave',
-        tint: '#a78bfa',
-        dsl: `search synth, filter, classicNoisedeck, render, points, mixer
+    cyberGrid: {
+        name: 'more meandering cyber grid',
+        code: 'yK_2tw',
+        tint: '#fb923c',
+        dsl: `search synth, filter, synth3d, render, points, mixer
 
-// slow geometric opener; the harmony track (A2) breathes the bloom
-perlin(scale: 52.81)
-  .lowPoly(scale: 96, seed: 42, mode: distance2, edgeStrength: 0.82, alpha: 0.7, speed: 5)
-  .adjust(mode: hsv, rotation: 120, hueRange: 40)
-  .lighting(normalStrength: 5, smoothing: 2.9, specularIntensity: 2, shininess: 156, reflection: 21.3, refraction: 45.4, aberration: 36.1)
+// the synths on A2 raise the grid
+
+let osc1 = osc(type: oscKind.noise, min: 0.55, max: 0.7, seed: 1997)
+let osc2 = osc(type: oscKind.noise, min: 0.53, max: 0.87)
+let osc3 = osc(type: oscKind.noise, seed: 7877)
+let osc4 = osc(type: oscKind.noise, min: 0.46, max: 0.56, speed: 2, seed: 8236)
+
+perlin(
+  scale: 100,
+  octaves: 4,
+  colorMode: mono,
+  dimensions: 3,
+  ridges: true
+)
   .write(o0)
 
-caustic(interp: catmullRom4x4, noiseScale: 192.39, speed: 57.27, seed: 52)
-  .coalesce(tex: read(o0), blendMode: screen, mix: 8.27, refractAAmt: 63.56)
-  .bloom(threshold: 0.9, intensity: audio(band: audioBand.mid, channel: 2, min: 0.2, max: 0.6), taps: 24)
-  .lens(displacement: -0.5)
-  .vignette()
-  .adjust(saturation: 1.24, contrast: 0.61)
+perlin(
+  scale: 17.07,
+  colorMode: mono,
+  dimensions: 3,
+  seed: 3,
+  speed: 5
+)
+  .palette(
+    index: springtime,
+    offset: 11,
+    repeat: 2,
+    alpha: 0.62
+  )
   .write(o1)
 
-render(o1)`,
+heightmap3d(heightTex: read(o0), tex: read(o1), heightScale: audio(band: audioBand.mid, channel: 2, min: 0.15, max: 0.7))
+  .renderLandscape3d(
+    zoom: 3.16,
+    panY: -0.36,
+    viewMode: perspective,
+    rotateX: 0,
+    rotateY: osc3,
+    posX: osc1,
+    posY: 11.8,
+    posZ: osc2
+  )
+  .edge(
+    channel: luminance,
+    amount: 54.64,
+    blend: darken
+  )
+  .wobble()
+  .rotate(rotation: osc4)
+  .subchain(name: "lens effects", id: "yq5n") {
+    .temporalAberration(
+      redDelay: 2,
+      greenDelay: 1,
+      blueDelay: 0
+    )
+    .bloom(taps: 15)
+    .lens(displacement: -0.44)
+    .vaseline()
+  }
+  .write(o2)
+
+render(o2)`,
     },
-    kickPulse: {
-        name: 'Kick pulse',
-        tint: '#ff4d5e',
-        dsl: `search classicNoisedeck, synth, filter
+    horizon: {
+        name: 'horizon',
+        code: '1FeoLQ',
+        tint: '#84cc16',
+        dsl: `search synth, filter, synth3d, render
 
-// the kick (A1) drives the lens and the refraction mix
-let kick = audio(band: audioBand.low, channel: 1)
+// the synths on A2 raise the city
 
-noise(hueRange: 30, speed: 50, refractAmt: 80, ridges: true, wrap: true, xScale: 95, yScale: 95, type: simplex, colorMode: hsv, kaleido: 1, octaves: 1)
+perlin(
+  scale: 100,
+  octaves: 4,
+  colorMode: mono,
+  dimensions: 3,
+  ridges: true
+)
   .write(o0)
 
-noise(palette: vaporwave, type: catmullRom3x3, colorMode: palette, kaleido: 1, xScale: 60, yScale: 60, octaves: 1)
-  .coalesce(tex: read(o0), blendMode: reflect, mix: kick, refractAAmt: 40, refractBAmt: 80)
-  .lensDistortion(aberration: kick, distortion: kick, speed: 0, loopScale: 60, alpha: 30, shape: circle, tint: #ff4d5e, vignetteAmt: -60)
+perlin(
+  scale: 17.07,
+  colorMode: mono,
+  dimensions: 3,
+  seed: 3,
+  speed: 5
+)
+  .palette(
+    index: springtime,
+    offset: 11,
+    repeat: 2,
+    alpha: 0.62
+  )
   .write(o1)
 
-render(o1)`,
+heightmap3d(heightTex: read(o0), tex: read(o1), heightScale: audio(band: audioBand.mid, channel: 2, min: 0.15, max: 0.7))
+  .renderLandscape3d(
+    zoom: 2.08,
+    panY: -0.23,
+    diffuseIntensity: 0.82,
+    specularIntensity: 0.1,
+    viewMode: perspective,
+    rotateX: 0.24,
+    posY: 18.3,
+    posZ: 44.2
+  )
+  .edge(
+    channel: luminance,
+    amount: 54.64,
+    blend: darken
+  )
+  .write(o2)
+
+render(o2)`,
     },
-    fireEyes: {
-        name: 'Fire eyes',
-        tint: '#ff8b3d',
-        dsl: `search classicNoisedeck, synth, filter
-
-let kick = audio(band: audioBand.low, channel: 1, min: 0.35, max: 0.75)
-
-shapes(speedA: -31, loopAOffset: triangle, loopAScale: kick, speedB: 23, loopBOffset: diamond, loopBScale: 100, palette: grayscale, wrap: true, cyclePalette: off, rotatePalette: 0)
-  .write(o0)
-
-noise(hueRange: 34, hueRotation: 78, speed: 100, refractAmt: 47, ridges: true, wrap: true, xScale: 99, yScale: 96, type: catmullRom3x3, colorMode: hsv, kaleido: 1, octaves: 1)
-  .coalesce(tex: read(o0), blendMode: cloak, mix: 71, refractAAmt: 73, refractBAmt: 83)
-  .lensDistortion(aberration: 47, distortion: 14, speed: -78, loopScale: 67, alpha: 16, saturation: -15, shape: triangle, tint: #c45f95, vignetteAmt: -100)
-  .write(o1)
-
-render(o1)`,
-    },
-    glitchField: {
-        name: 'Glitch field',
-        tint: '#00d4ff',
-        dsl: `search classicNoisedeck, synth, filter
-
-let hats = audio(band: audioBand.high, channel: 1)
-
-noise(hueRange: 83, hueRotation: hats, speed: 100, refractAmt: 90, ridges: true, wrap: true, xScale: 100, yScale: 97, type: simplex, colorMode: hsv, kaleido: 1, octaves: 1)
-  .write(o0)
-
-noise(hueRange: 81, hueRotation: 66, speed: 100, refractAmt: 100, ridges: true, wrap: true, xScale: 99, yScale: 96, type: simplex, colorMode: hsv, kaleido: 1, octaves: 1)
-  .coalesce(tex: read(o0), blendMode: reflect, mix: -86, refractAAmt: 48, refractBAmt: 60)
-  .lensDistortion(aberration: 100, hueRange: 100, hueRotation: 0, blendMode: add, modulate: true, passthru: 33, alpha: 0, speed: 0, distortion: 0)
-  .write(o1)
-
-render(o1)`,
-    },
-    pinkKaleido: {
-        name: 'Pink kaleidoscope',
+    infrastructure: {
+        name: 'Infrastructure',
+        code: '0IlHtg',
         tint: '#ff5fc0',
-        dsl: `search classicNoisedeck, synth, filter
+        dsl: `search synth, filter, synth3d, render, points, mixer
 
-// the harmony (A2) sets the number of mirrors
-let sides = audio(band: audioBand.mid, channel: 2, min: 0.1, max: 0.5)
+// the kick on A1 lifts the city
 
-noise(hueRotation: 0, kaleido: sides, metric: circle, palette: eventHorizon, wrap: true, type: catmullRom3x3, colorMode: palette, xScale: 85, yScale: 85, octaves: 1)
+let posX = osc(type: oscKind.noise, min: 0.47, max: 0.53, seed: 1997)
+let posZ = osc(type: oscKind.noise, min: 0.47, max: 0.53)
+let rotY = osc(type: oscKind.noise, min: 0.49, max: 0.64, seed: 7877)
+let wobbleRot = osc(type: oscKind.noise, min: 0.46, max: 0.56, speed: 2, seed: 8236)
+let height = audio(band: audioBand.low, channel: 1, min: 0.05, max: 0.8)
+
+cell(
+  shape: square,
+  scale: 31.65,
+  cellScale: 65.23,
+  speed: 5,
+  seed: 26
+)
   .write(o0)
 
-render(o0)`,
-    },
-    rainbowMirror: {
-        name: 'Rainbow mirror',
-        tint: '#8a47ae',
-        dsl: `search classicNoisedeck, synth, filter
-
-let mid = audio(band: audioBand.mid, channel: 2, min: 0.2, max: 1)
-
-noise(hueRange: 37, hueRotation: 0, speed: mid, octaves: 5, refractAmt: 100, ridges: false, type: simplex, colorMode: hsv, kaleido: 1, xScale: 98, yScale: 98)
-  .write(o0)
-
-noise(hueRange: 100, hueRotation: 28, speed: 98, refractAmt: 0, ridges: false, wrap: false, xScale: 98, yScale: 98, type: hermite, colorMode: hsv, kaleido: 1, octaves: 1)
-  .coalesce(tex: read(o0), blendMode: hardLight, mix: -72, refractAAmt: 0, refractBAmt: 100)
-  .lensDistortion(aberration: 0, distortion: -22, speed: 10, loopScale: 71, alpha: 0, shape: hexagon, tint: #8a47ae, vignetteAmt: -73)
+cell(
+  shape: square,
+  scale: 22.38,
+  speed: 4
+)
+  .palette(
+    index: toxic,
+    offset: 11,
+    alpha: 0.62
+  )
   .write(o1)
 
-render(o1)`,
+heightmap3d(
+  heightTex: read(o0),
+  tex: read(o1),
+  volumeSize: x128,
+  heightScale: height
+)
+  .renderLandscape3d(
+    zoom: 2.72,
+    panX: -0.04,
+    panY: 0.06,
+    ambient: 0.49,
+    diffuseIntensity: 0.8,
+    specularIntensity: 0.22,
+    viewMode: perspective,
+    rotateX: 4.43,
+    rotateY: rotY,
+    rotateZ: 2.56,
+    posX: posX,
+    posY: 11.8,
+    posZ: posZ
+  )
+  .edge(
+    kernel: fine,
+    channel: luminance,
+    amount: 97.24,
+    threshold: 67.23,
+    blend: multiply,
+    mix: 70.08
+  )
+  .wobble(wrap: clamp)
+  .rotate(
+    rotation: wobbleRot,
+    wrap: mirror,
+    speed: 1
+  )
+  .subchain(name: "lens effects", id: "yq5n") {
+    .temporalAberration(
+      redDelay: 3.7,
+      greenDelay: 1,
+      blueDelay: 0
+    )
+    .bloom(
+      threshold: 1,
+      softKnee: 0.09,
+      intensity: 0.7,
+      radius: 55,
+      taps: 38
+    )
+    .lens(displacement: -1)
+    .vaseline(alpha: 0.25)
+  }
+  .write(o2)
+
+render(o2)`,
     },
-    beatRings: {
-        name: 'Beat rings',
-        tint: '#ffb03d',
-        dsl: `search classicNoisedeck, synth, filter
-
-let kick = audio(band: audioBand.low, channel: 1, min: 0.1, max: 0.8)
-let kickMix = audio(band: audioBand.low, channel: 1)
-
-shapes(speedA: -30, loopAOffset: circle, loopAScale: kick, speedB: 50, loopBOffset: heptagon, loopBScale: kick, palette: solaris, wrap: true, cyclePalette: off, rotatePalette: 0)
-  .write(o0)
-
-noise(hueRange: 37, hueRotation: 88, speed: 95, octaves: 3, refractAmt: 0, ridges: true, type: simplex, colorMode: hsv, kaleido: 1, xScale: 100, yScale: 100)
-  .coalesce(tex: read(o0), blendMode: reflect, mix: kickMix, refractAAmt: 6, refractBAmt: 0)
-  .write(o1)
-
-render(o1)`,
-    },
-    oilSlick: {
-        name: 'Oil slick',
-        tint: '#22d3ee',
-        dsl: `search classicNoisedeck, synth, filter
-
-noise(hueRange: 100, hueRotation: audio(band: audioBand.high, channel: 1), speed: 100, refractAmt: 100, ridges: true, wrap: true, xScale: 100, yScale: 100, type: simplex, colorMode: hsv, kaleido: 1, octaves: 1)
-  .write(o0)
-
-render(o0)`,
-    },
-    softGlow: {
-        name: 'Soft glow',
+    nightVoxicles: {
+        name: 'Night Voxicles',
+        code: '0C4dKw',
         tint: '#ffd24e',
-        dsl: `search classicNoisedeck, synth, filter
+        dsl: `search synth, filter, synth3d, render, points, mixer, classicNoisedeck
 
-// the break: hue follows the pads on A2
-let pads = audio(band: audioBand.mid, channel: 2)
+// the kick on A1 lifts the voxels
 
-noise(hueRange: 34, hueRotation: pads, speed: 17, octaves: 3, refractAmt: 0, ridges: true, type: simplex, colorMode: hsv, kaleido: 1, xScale: 100, yScale: 100)
-  .colorLab(colorMode: srgbDefault, dither: none, hueRange: 100, hueRotation: 0, levels: 0, palette: royal)
-  .write(o1)
+let osc1 = osc(type: oscKind.saw)
+let osc2 = osc(type: oscKind.noise, seed: 3310)
+let osc3 = osc(type: oscKind.noise)
+let osc4 = osc(type: oscKind.noise, seed: 2104)
+let osc5 = osc(type: oscKind.noise, seed: 7169)
+let osc6 = osc(type: oscKind.noise, seed: 8125)
+let osc7 = osc(type: oscKind.sine, min: 0.07, max: 0.39)
+let osc8 = osc(type: oscKind.sawInv)
 
-render(o1)`,
-    },
-    blueMandala: {
-        name: 'Blue mandala',
-        tint: '#4a88fb',
-        dsl: `search classicNoisedeck, synth, filter
-
-let sides = audio(band: audioBand.low, channel: 1, min: 0.15, max: 0.6)
-
-noise(hueRotation: 74, kaleido: sides, metric: circle, palette: royal, wrap: true, type: catmullRom3x3, colorMode: palette, xScale: 98, yScale: 98, octaves: 1)
+perlin(scale: 26.15, speed: 5)
+  .kaleido(
+    sides: 20,
+    metric: triangle,
+    loopOffset: triangle,
+    loopScale: 100,
+    speed: -100,
+    seed: 99,
+    direction: counterclock,
+    kernel: outline,
+    effectWidth: 3.347
+  )
   .write(o0)
 
-noise(hueRotation: 83, kaleido: 5, metric: circle, palette: skykissed, wrap: true, type: linear, colorMode: palette, xScale: 92, yScale: 92, octaves: 1)
-  .coalesce(tex: read(o0), blendMode: difference, mix: -21, refractAAmt: 40, refractBAmt: 42)
-  .kaleido(direction: clockwise, effectWidth: 0, sides: 5, kernel: none, speed: 2, loopOffset: pentagon, loopScale: 34, metric: circle, wrap: true)
-  .colorLab(colorMode: srgbDefault, dither: none, hueRange: 100, hueRotation: 58, levels: 0, palette: sulphur)
+read(o0)
+  .palette(index: grayscale, repeat: 2)
+  .write(o2)
+
+solid(color: #000000)
+  .subchain(name: "flow field particles", id: "myse") {
+    .pointsEmit()
+    .heightGrid(
+      heightTex: read(o0),
+      diffuseTex: read(o2),
+      gridScale: 100,
+      heightScale: 74.7,
+      heightOffset: -49.4
+    )
+    .pointsRender(
+      density: 100,
+      intensity: 66.62,
+      viewMode: perspective,
+      rotateX: osc7,
+      rotateZ: osc8,
+      viewScale: 1.43
+    )
+    .pointsBillboardRender(
+      shapeMode: square,
+      blendMode: alpha,
+      depositOpacity: 100,
+      pointSize: 10.05,
+      sizeVariation: 100,
+      density: 1.98,
+      inputIntensity: 100,
+      viewMode: perspective,
+      rotateX: osc7,
+      rotateZ: osc8,
+      viewScale: 1.43,
+      aperture: 3.2,
+      focalDistance: 255
+    )
+  }
+  .write(o3)
+
+heightmap3d(
+  heightTex: read(o0),
+  tex: read(o2),
+  volumeSize: x128,
+  heightScale: audio(band: audioBand.low, channel: 1, min: 0.3, max: 0.9)
+)
+  .renderLandscape3d(
+    zoom: 2,
+    bgColor: #000000,
+    viewMode: perspective,
+    rotateX: osc7,
+    rotateZ: osc8
+  )
+  .split(
+    tex: read(o3),
+    invert: on,
+    rotation: osc8,
+    softness: 1,
+    speed: 2
+  )
+  .subchain(name: "lens effects", id: "7efo") {
+    .temporalAberration(
+      redDelay: 2,
+      greenDelay: 1,
+      blueDelay: 0
+    )
+    .bloom(taps: 15)
+    .lens(displacement: -0.46, aspectLens: false)
+    .vignette(alpha: 0.69)
+  }
   .write(o1)
 
 render(o1)`,
     },
-    spectrum: {
-        name: 'Spectrum',
-        tint: '#22c55e',
-        dsl: `search synth
+    rwnmq: {
+        name: 'Untitled · rwN-MQ',
+        code: 'rwN-MQ',
+        tint: '#a78bfa',
+        dsl: `search synth, filter, synth3d, render, points, mixer
 
-// the mix's spectrum, screened over the drop
-spectrum().write(o0)
+// the kick on A1 lifts the landscape
+
+let osc1 = osc(type: oscKind.noise, max: 0.15, speed: 2, seed: 8659)
+let osc2 = osc(type: oscKind.noise, min: 0.29, max: 0.75, seed: 1342)
+let osc3 = osc(type: oscKind.noise, min: 0.27, max: 0.72, seed: 7366)
+let osc4 = osc(type: oscKind.noise, min: 0.26, max: 0.79, seed: 3287)
+let osc5 = osc(type: oscKind.noise, min: 0.29, max: 0.8, seed: 3188)
+let osc6 = osc(type: oscKind.noise, min: 0.21, max: 0.86, seed: 6278)
+let osc7 = osc(type: oscKind.sine)
+let osc8 = osc(type: oscKind.sine, min: 0.84)
+
+subdivide(
+  tex: read(o2),
+  fill: arc,
+  speed: 19
+)
+  .tile(
+    symmetry: rotate6,
+    scale: 4,
+    offsetX: osc6,
+    offsetY: osc5,
+    angle: osc1,
+    repeat: 1
+  )
+  .write(o0)
+
+read(o0)
+  .palette(index: santaCruz)
+  .write(o2)
+
+solid(color: #000000ff)
+  .subchain(name: "flow field particles", id: "uvdh") {
+    .pointsEmit(stateSize: x64)
+    .heightGrid(
+      heightTex: read(o0),
+      diffuseTex: read(o2),
+      gridScale: 100,
+      heightScale: -35
+    )
+    .pointsRender(
+      density: 100,
+      intensity: 84.12,
+      viewMode: perspective,
+      rotateX: 1.56,
+      rotateY: osc8,
+      rotateZ: osc7,
+      viewScale: 1
+    )
+  }
+  .write(o3)
+
+heightmap3d(
+  heightTex: read(o0),
+  tex: read(o2),
+  volumeSize: x128,
+  heightScale: audio(band: audioBand.low, channel: 1, min: 0.4, max: 1)
+)
+  .renderLandscape3d(
+    zoom: 0.95,
+    bgColor: #35001aff,
+    viewMode: perspective,
+    rotateX: 1.56,
+    rotateY: osc8,
+    rotateZ: osc7
+  )
+  .sobel(alpha: 0.44)
+  .split(
+    tex: read(o3),
+    rotation: osc8,
+    softness: 1
+  )
+  .rotate(speed: 2)
+  .subchain(name: "lens effects", id: "7efo") {
+    .temporalAberration(
+      redDelay: 4,
+      greenDelay: 2,
+      blueDelay: 0
+    )
+    .bloom(
+      threshold: 0.3,
+      intensity: 2.65,
+      taps: 15
+    )
+    .lens(displacement: -1, aspectLens: false)
+    .vignette(brightness: 0.58, alpha: 0.44)
+  }
+  .write(o1)
+
+render(o1)`,
+    },
+    cyberLandscape: {
+        name: 'the evolving cyber landscape',
+        code: 'K3MMgw',
+        tint: '#a78bfa',
+        dsl: `search synth, filter, synth3d, render, points, mixer
+
+// the kick on A1 lifts the landscape
+
+let osc1 = osc(type: oscKind.saw)
+
+cell(
+  shape: triangle,
+  scale: 81.67,
+  cellScale: 100,
+  speed: 5
+)
+  .write(o0)
+
+perlin(
+  scale: 57.13,
+  colorMode: mono,
+  speed: 3
+)
+  .palette(
+    index: vibrant,
+    rotation: back,
+    offset: 94.412,
+    repeat: 2,
+    alpha: 0.536
+  )
+  .write(o2)
+
+heightmap3d(
+  heightTex: read(o0),
+  tex: read(o2),
+  heightScale: audio(band: audioBand.low, channel: 1, min: 0.2, max: 0.8),
+  baseHeight: 0.08
+)
+  .renderLandscape3d(
+    zoom: 2.43,
+    ambient: 0.16,
+    diffuseIntensity: 1.02,
+    specularIntensity: 0.2,
+    bgColor: #000000,
+    viewMode: perspective,
+    rotateX: 1.47,
+    rotateZ: osc1,
+    posZ: 83.2,
+    fieldOfView: 114
+  )
+  .sobel(amount: 1.96)
+  .subchain(name: "lens effects", id: "m56y") {
+    .temporalAberration()
+    .bloom(
+      threshold: 0.15,
+      softKnee: 0.18,
+      intensity: 1.55,
+      taps: 15
+    )
+    .lens(displacement: -0.61, aspectLens: false)
+    .vaseline()
+  }
+  .write(o1)
+
+render(o1)`,
+    },
+    waveSort: {
+        name: 'wave sort',
+        code: 'tLMC4w',
+        tint: '#ff6b6b',
+        dsl: `search synth, points, render, filter, mixer
+
+// the kick on A1 lifts the grid
+
+osc2d(
+  oscType: noise2d,
+  freq: 8,
+  speed: 1,
+  rotation: -31.628,
+  seed: 944
+)
+  .write(o1)
+
+read(o1)
+  .palette(
+    index: dreamy,
+    rotation: fwd,
+    alpha: 0.58
+  )
+  .write(o2)
+
+solid(color: #000000ff)
+  .pointsEmit(stateSize: x128)
+  .heightGrid(
+    heightTex: read(o1),
+    diffuseTex: read(o2),
+    gridScale: 100,
+    heightScale: audio(band: audioBand.low, channel: 1, min: 0.5, max: 0.8),
+    heightOffset: 29.3
+  )
+  .pointsBillboardRender(
+    shapeMode: square,
+    blendMode: alpha,
+    depositOpacity: 100,
+    pointSize: 2.58,
+    sizeVariation: 100,
+    density: 100,
+    intensity: 75.58,
+    inputIntensity: 100,
+    viewMode: perspective,
+    rotateX: 0.36,
+    rotateZ: 0.05,
+    viewScale: 2.53,
+    posY: -25,
+    posZ: 2.2,
+    fieldOfView: 73,
+    sizeDistance: 226,
+    brightnessDistance: 120,
+    aperture: 9.6,
+    focalDistance: 1
+  )
+  .subchain(name: "lens effects", id: "k6ns") {
+    .temporalAberration()
+    .bloom(
+      threshold: 0.3,
+      intensity: 1.5,
+      taps: 15
+    )
+    .lens(displacement: -0.32, aspectLens: false)
+    .vaseline(alpha: 1)
+  }
+  .pixelSort(angled: 15)
+  .write(o0)
+
 render(o0)`,
     },
-    scope: {
-        name: 'Scope',
+    blocko: {
+        name: 'blocko',
+        code: 'e0ukeQ',
         tint: '#4ed99b',
-        dsl: `search synth
+        dsl: `search synth, filter, synth3d, render, points, mixer
 
-scope().write(o0)
+// the kick on A1 lifts the blocks
+
+let osc1 = osc(type: oscKind.noise, max: 0.15, speed: 2, seed: 8659)
+let osc2 = osc(type: oscKind.noise, min: 0.29, max: 0.75, seed: 1342)
+let osc3 = osc(type: oscKind.noise, min: 0.27, max: 0.72, seed: 7366)
+let osc4 = osc(type: oscKind.noise, min: 0.26, max: 0.79, seed: 3287)
+let osc5 = osc(type: oscKind.noise, min: 0.29, max: 0.8, seed: 3188)
+let osc6 = osc(type: oscKind.noise, min: 0.26, max: 0.77, seed: 6278)
+let osc7 = osc(type: oscKind.noise, min: 0.42, max: 0.67, seed: 9999)
+let osc8 = osc(type: oscKind.noise, min: 0.87, seed: 6954)
+
+bitwise(
+  operation: and,
+  scale: 100,
+  offsetY: 154,
+  speed: 5
+)
+  .tile(
+    symmetry: rotate6,
+    scale: 0.4,
+    offsetX: osc6,
+    offsetY: osc5,
+    angle: osc1,
+    repeat: 1
+  )
+  .write(o0)
+
+read(o0)
+  .palette(index: darkSatin)
+  .write(o2)
+
+solid(color: #000000ff)
+  .subchain(name: "flow field particles", id: "uvdh") {
+    .pointsEmit(stateSize: x2048)
+    .heightGrid(
+      heightTex: read(o0),
+      diffuseTex: read(o2),
+      heightScale: 100,
+      heightOffset: -75.6
+    )
+    .pointsRender(
+      density: 100,
+      intensity: 0,
+      inputIntensity: 100,
+      viewMode: perspective,
+      rotateX: 1.5,
+      rotateY: osc8,
+      rotateZ: osc7,
+      viewScale: 2.5,
+      posZ: 25,
+      fieldOfView: 90
+    )
+  }
+  .write(o3)
+
+heightmap3d(
+  heightTex: read(o0),
+  tex: read(o2),
+  volumeSize: x128,
+  heightScale: audio(band: audioBand.low, channel: 1, min: 0.3, max: 0.9)
+)
+  .renderLandscape3d(
+    zoom: 2.5,
+    bgColor: #222222ff,
+    viewMode: perspective,
+    rotateX: 1.5,
+    rotateY: osc8,
+    rotateZ: osc7,
+    posZ: 25,
+    fieldOfView: 90
+  )
+  .sobel(amount: 0.59, alpha: 0.81)
+  .blendMode(
+    tex: read(o3),
+    mode: lighten,
+    mix: -68.88
+  )
+  .subchain(name: "lens effects", id: "7efo") {
+    .temporalAberration(
+      redDelay: 2,
+      greenDelay: 1,
+      blueDelay: 0
+    )
+    .bloom(
+      threshold: 0.95,
+      intensity: 0.9,
+      taps: 15
+    )
+    .lens(displacement: -1, aspectLens: false)
+    .vignette(brightness: 0.58, alpha: 0.44)
+  }
+  .write(o1)
+
+render(o1)`,
+    },
+    voxicles: {
+        name: 'voxicles',
+        code: 'cixSsg',
+        tint: '#f43f5e',
+        dsl: `search synth, filter, render, points, mixer, synth3d
+
+// the kick on A1 lifts the voxels
+
+let osc1 = osc(type: oscKind.noise, min: 0.69, max: 0.72)
+let osc2 = osc(type: oscKind.noise, max: 0.13)
+
+perlin(
+  scale: 9.51,
+  octaves: 3,
+  colorMode: mono,
+  seed: 70,
+  speed: 5
+)
+  .write(o0)
+
+perlin(
+  scale: 13.05,
+  colorMode: mono,
+  speed: 5
+)
+  .palette(
+    index: mars,
+    rotation: back,
+    offset: 41.51,
+    alpha: 0.669
+  )
+  .write(o2)
+
+heightmap3d(
+  heightTex: read(o0),
+  tex: read(o2),
+  volumeSize: x128,
+  heightScale: audio(band: audioBand.low, channel: 1, min: 0.1, max: 0.45),
+  baseHeight: 0.42
+)
+  .renderLandscape3d(
+    viewMode: perspective,
+    rotateX: 1,
+    rotateY: osc2,
+    rotateZ: osc2,
+    posY: -10,
+    posZ: osc1,
+    fieldOfView: 96
+  )
+  .write(o3)
+
+solid(color: #000000ff)
+  .subchain(name: "strange attractor particles", id: "9xcv") {
+    .pointsEmit(stateSize: x128)
+    .heightGrid(
+      heightTex: read(o0),
+      diffuseTex: read(o2),
+      heightOffset: -11.1
+    )
+    .pointsBillboardRender(
+      shapeMode: square,
+      blendMode: alpha,
+      depositOpacity: 100,
+      pointSize: 9.05,
+      sizeVariation: 100,
+      rotationVar: 100,
+      density: 100,
+      intensity: 92.19,
+      inputIntensity: 100,
+      viewMode: perspective,
+      rotateX: 1,
+      rotateY: osc2,
+      rotateZ: osc2,
+      viewScale: 0.75,
+      posY: -10,
+      posZ: osc1,
+      fieldOfView: 96,
+      sizeDistance: 116,
+      brightnessDistance: 45,
+      aperture: 1.1,
+      focalDistance: 22
+    )
+  }
+  .split(
+    tex: read(o3),
+    invert: on,
+    rotation: -131.76,
+    softness: 1,
+    speed: 4
+  )
+  .subchain(name: "lens effects", id: "6uyj") {
+    .temporalAberration()
+    .bloom(taps: 15)
+    .lens(displacement: -0.5)
+    .vaseline()
+  }
+  .write(o1)
+
+render(o1)`,
+    },
+    secretPattern: {
+        name: 'secret pattern',
+        code: 'YexlQw',
+        tint: '#ffd24e',
+        dsl: `search synth, filter, synth3d, render, points, mixer
+
+// the kick on A1 lifts the circuit
+
+let posX = osc(type: oscKind.noise, min: 0.49, max: 0.51, seed: 1997)
+let posZ = osc(type: oscKind.noise, min: 0.49, max: 0.51)
+let rotY = osc(type: oscKind.noise, min: 0.49, max: 0.51, seed: 7877)
+let wobbleRot = osc(type: oscKind.noise, min: 0.49, max: 0.51, speed: 2, seed: 8236)
+let height = audio(band: audioBand.low, channel: 1, min: 0.05, max: 0.8)
+
+cell(
+  shape: square,
+  scale: 31.65,
+  cellScale: 65.23,
+  speed: 5,
+  seed: 26
+)
+  .write(o0)
+
+cell(
+  shape: square,
+  scale: 22.38,
+  speed: 4
+)
+  .palette(
+    index: skykissed,
+    rotation: back,
+    offset: 28.021,
+    repeat: 3
+  )
+  .write(o1)
+
+heightmap3d(
+  heightTex: read(o0),
+  tex: read(o1),
+  volumeSize: x128,
+  heightScale: height
+)
+  .renderLandscape3d(
+    zoom: 2.72,
+    panX: -0.04,
+    panY: 0.06,
+    ambient: 0.49,
+    diffuseIntensity: 0.8,
+    specularIntensity: 0.22,
+    viewMode: perspective,
+    rotateX: 4.43,
+    rotateY: rotY,
+    rotateZ: 2.56,
+    posX: posX,
+    posY: 11.8,
+    posZ: posZ
+  )
+  .edge(
+    kernel: fine,
+    channel: luminance,
+    amount: 97.24,
+    threshold: 67.23,
+    blend: multiply,
+    mix: 81.05
+  )
+  .wobble(wrap: clamp)
+  .rotate(rotation: wobbleRot, wrap: mirror)
+  .subchain(name: "lens effects", id: "yq5n") {
+    .bloom(
+      threshold: 1,
+      softKnee: 0.09,
+      intensity: 0.7,
+      radius: 55,
+      taps: 38
+    )
+    .lens(displacement: -1)
+    .vaseline(alpha: 0.58)
+  }
+  .write(o2)
+
+render(o2)`,
+    },
+    landscapeTest: {
+        name: 'landscape automation test 2',
+        code: 'ZqWbKQ',
+        tint: '#ff6b6b',
+        dsl: `search synth, filter, synth3d, render, points, mixer
+
+// the kick on A1 lifts the terrain
+
+let osc1 = osc(type: oscKind.noise, min: 0.55, max: 0.7, seed: 1997)
+let osc2 = osc(type: oscKind.noise, min: 0.53, max: 0.87)
+let osc3 = osc(type: oscKind.noise, seed: 7877)
+let osc4 = osc(type: oscKind.noise, min: 0.46, max: 0.56, speed: 2, seed: 8236)
+let osc5 = osc(type: oscKind.noise, min: 0.26, speed: 4, seed: 7029)
+
+perlin(
+  scale: osc5,
+  octaves: 4,
+  colorMode: mono,
+  dimensions: 3,
+  ridges: true,
+  speed: 4
+)
+  .write(o0)
+
+perlin(
+  scale: osc5,
+  colorMode: mono,
+  dimensions: 3,
+  seed: 3
+)
+  .palette(
+    index: royal,
+    offset: 11,
+    repeat: 2,
+    alpha: 0.62
+  )
+  .write(o1)
+
+heightmap3d(
+  heightTex: read(o0),
+  tex: read(o1),
+  volumeSize: x128,
+  heightScale: audio(band: audioBand.low, channel: 1, min: 0.2, max: 0.8)
+)
+  .renderLandscape3d(
+    zoom: 3.16,
+    panY: -0.36,
+    viewMode: perspective,
+    rotateX: 0,
+    rotateY: osc3,
+    posX: osc1,
+    posY: 11.8,
+    posZ: osc2
+  )
+  .edge(
+    channel: luminance,
+    amount: 54.64,
+    blend: darken
+  )
+  .wobble(wrap: clamp)
+  .rotate(rotation: osc4, wrap: clamp)
+  .subchain(name: "lens effects", id: "yq5n") {
+    .temporalAberration(
+      redDelay: 2,
+      greenDelay: 1,
+      blueDelay: 0
+    )
+    .bloom(
+      threshold: 0,
+      intensity: 2,
+      radius: 55,
+      taps: 38
+    )
+    .lens(displacement: -0.44)
+    .vaseline()
+  }
+  .write(o2)
+
+render(o2)`,
+    },
+    softWaves: {
+        name: 'soft waves',
+        code: '6l1kKA',
+        tint: '#4ea8ff',
+        dsl: `search synth, points, render, filter, mixer
+
+// the synths on A2 swell the waves
+
+shape(
+  loopAOffset: verticalScan,
+  loopBOffset: noiseSimplex,
+  loopBScale: 100,
+  speedA: 100,
+  speedB: -43
+)
+  .write(o1)
+
+read(o1)
+  .palette(
+    index: afterimage,
+    rotation: fwd,
+    alpha: 0.58
+  )
+  .write(o2)
+
+solid(color: #000000)
+  .pointsEmit(stateSize: x128)
+  .heightGrid(
+    heightTex: read(o1),
+    diffuseTex: read(o2),
+    gridScale: 100,
+    heightScale: audio(band: audioBand.mid, channel: 2, min: 0.5, max: 0.8),
+    heightOffset: 29.3
+  )
+  .pointsBillboardRender(
+    blendMode: alpha,
+    pointSize: 4.16,
+    density: 100,
+    inputIntensity: 100,
+    viewMode: perspective,
+    rotateX: 0.37,
+    viewScale: 2.19,
+    posY: -31.3
+  )
+  .subchain(name: "lens effects", id: "k6ns") {
+    .temporalAberration()
+    .bloom(
+      threshold: 0.3,
+      intensity: 1.5,
+      taps: 15
+    )
+    .lens(displacement: -0.71, aspectLens: false)
+    .vaseline(alpha: 1)
+  }
+  .write(o0)
+
 render(o0)`,
+    },
+    minimumLegroom: {
+        name: 'minimum legroom',
+        code: 'VrdCjg',
+        tint: '#84cc16',
+        dsl: `search synth, filter, synth3d, render, points, mixer
+
+// the kick on A1 lifts the tunnel
+
+let zRotation = osc(type: oscKind.saw)
+let noiseScale = osc(type: oscKind.sine, min: 0.45, max: 0.84, speed: 2)
+let zPosition = osc(type: oscKind.noise, min: 0.57, max: 0.78, seed: 2995)
+let offsetX = osc(type: oscKind.noise, min: 0.31, max: 0.62, seed: 7785)
+let offsetY = osc(type: oscKind.noise, min: 0.5, max: 0.63, seed: 5611)
+
+cell(
+  shape: triangle,
+  scale: noiseScale,
+  cellScale: 100,
+  variation: 0,
+  speed: 5,
+  seed: 46
+)
+  .write(o0)
+
+perlin(
+  scale: 100,
+  colorMode: mono,
+  dimensions: 3,
+  ridges: true,
+  speed: 2
+)
+  .palette(
+    index: eventHorizon,
+    rotation: back,
+    offset: 83.098,
+    repeat: 3,
+    alpha: 0.66
+  )
+  .write(o2)
+
+heightmap3d(
+  heightTex: read(o0),
+  tex: read(o2),
+  volumeSize: x128,
+  heightScale: audio(band: audioBand.low, channel: 1, min: 0.25, max: 0.85),
+  baseHeight: 0.08
+)
+  .renderLandscape3d(
+    zoom: zPosition,
+    ambient: 0.37,
+    diffuseIntensity: 1.2,
+    specularIntensity: 0.2,
+    bgColor: #000000,
+    viewMode: perspective,
+    rotateX: 1.47,
+    rotateZ: zRotation,
+    posX: offsetX,
+    posY: offsetY,
+    posZ: zPosition,
+    fieldOfView: 94
+  )
+  .edge(
+    kernel: fine,
+    size: kernel7x7,
+    channel: luminance,
+    amount: 17.89,
+    mix: 84.15
+  )
+  .wobble()
+  .subchain(name: "lens effects", id: "m56y") {
+    .temporalAberration()
+    .bloom(
+      threshold: 0.15,
+      softKnee: 0.18,
+      intensity: 1.55,
+      taps: 15
+    )
+    .lens(displacement: -1)
+    .vaseline()
+  }
+  .write(o1)
+
+render(o1)`,
+    },
+    orthoLandscape: {
+        name: 'ortho landscape',
+        code: 'wKiJpQ',
+        tint: '#a78bfa',
+        dsl: `search synth, filter, synth3d, render
+
+perlin(
+  scale: 100,
+  octaves: 4,
+  colorMode: mono,
+  dimensions: 3,
+  ridges: true
+)
+  .write(o0)
+
+perlin(
+  scale: 17.07,
+  colorMode: mono,
+  dimensions: 3,
+  seed: 3,
+  speed: 5
+)
+  .palette(
+    index: springtime,
+    offset: 11,
+    repeat: 2,
+    alpha: 0.62
+  )
+  .write(o1)
+
+heightmap3d(heightTex: read(o0), tex: read(o1))
+  .renderLandscape3d(
+    zoom: 3.95,
+    panY: -0.42,
+    diffuseIntensity: 0.82,
+    specularIntensity: 0.1,
+    rotateX: 0.24,
+    posY: 18.3,
+    posZ: 44.2
+  )
+  .edge(
+    channel: luminance,
+    amount: 54.64,
+    blend: darken
+  )
+  .write(o2)
+
+render(o2)`,
     },
 }
 
@@ -204,65 +1130,63 @@ render(o0)`,
 export const STARTER_PROGRAMS = Object.values(P).map(p => ({ name: p.name, dsl: p.dsl, tint: p.tint, tags: [] }))
 
 function clip(spec, start, duration, extra = {}) {
-    return createProgramClip({ name: spec.name, tint: spec.tint, dsl: spec.dsl, start, duration, loop: BAR * 4, ...extra })
+    return createProgramClip({ name: spec.name, tint: spec.tint, dsl: spec.dsl, start, duration, loop: BAR * 8, ...extra })
 }
 
 function cut(track, a, b, preset, duration) {
     addTransition(track, { from: a.id, to: b.id, duration, preset, dsl: transitionPreset(preset).dsl })
 }
 
+/** Point a post preset's bare audio() calls at the drums track. */
+function onDrums(dsl) {
+    return dsl.replace(/audio\(band: audioBand\.(low|high),/g, 'audio(band: audioBand.$1, channel: 1,')
+}
+
 export function createDemoProject() {
-    const project = createProject({ name: 'Demo: Night Drive' })
+    const project = createProject({ name: 'Demo: Refinery' })
+    project.demo = DEMO_ID
     project.media = demoMedia()
     const main = project.sequences[project.mainSequenceId]
-    Object.assign(main, { name: 'Night Drive', duration: DEMO_DURATION, bpm: DEMO_BPM, fps: 30 })
-    main.tracks[0].name = 'V1'
+    Object.assign(main, { name: 'Refinery', duration: DEMO_DURATION, bpm: DEMO_BPM, fps: 30 })
     main.audioTracks[0].name = 'Drums'
-    main.audioTracks[1].name = 'Music'
-    const cinema = postPreset('cinema')
-    // The main post chain blooms on the kick: channel 1 is the drums track.
-    main.post = {
-        enabled: true,
-        preset: 'cinema',
-        loop: BAR * 4,
-        dsl: cinema.dsl.replace('audio(band: audioBand.low,', 'audio(band: audioBand.low, channel: 1,'),
-    }
+    main.audioTracks[1].name = 'Synths'
+    // The main post chain blooms on the kick and shakes on the hats.
+    main.post = { enabled: true, preset: 'industrial', loop: BAR * 8, dsl: onDrums(postPreset('industrial').dsl) }
 
     // The drop: a nested sequence that cuts on every bar.
     const drop = createSequence({ name: 'Drop', duration: BAR * 8, fps: 30, tracks: 2, audioTracks: 0 })
     drop.bpm = DEMO_BPM
-    const datamosh = postPreset('datamosh')
-    drop.post = {
-        enabled: true,
-        preset: 'datamosh',
-        loop: BAR * 4,
-        dsl: datamosh.dsl.replace(/audio\(band: audioBand\.low,/g, 'audio(band: audioBand.low, channel: 1,'),
-    }
-    const order = [P.fireEyes, P.glitchField, P.pinkKaleido, P.rainbowMirror, P.beatRings, P.oilSlick, P.fireEyes, P.glitchField]
-    const dropClips = order.map((spec, i) => insertClip(drop.tracks[0], clip(spec, i * BAR, BAR, { loop: BAR * 2, offset: i * BEAT })))
+    drop.post = { enabled: true, preset: 'datamosh', loop: BAR * 4, dsl: onDrums(postPreset('datamosh').dsl) }
+    const order = [
+        P.nightVoxicles, P.rwnmq, P.cyberLandscape, P.waveSort,
+        P.blocko, P.voxicles, P.secretPattern, P.landscapeTest,
+    ]
+    const dropClips = order.map((spec, i) => insertClip(drop.tracks[0], clip(spec, i * BAR, BAR, { loop: BAR * 4, offset: i * BEAT })))
     const dropCuts = ['hexagons', 'wipe', 'glitch', 'refract', 'iris', 'glitch', 'luma']
     dropCuts.forEach((preset, i) => cut(drop.tracks[0], dropClips[i], dropClips[i + 1], preset, preset === 'glitch' ? BEAT : BEAT * 2))
-    insertClip(drop.tracks[1], clip(P.spectrum, BAR * 4, BAR * 4, { blend: 'screen', opacity: 0.55 }))
     project.sequences[drop.id] = drop
     project.sequenceOrder.push(drop.id)
 
     const v1 = main.tracks[0]
-    const intro = insertClip(v1, clip(P.crystalCave, 0, BAR * 8))
-    const build = insertClip(v1, clip(P.kickPulse, BAR * 8, BAR * 8))
+    const intro = insertClip(v1, clip(P.cyberGrid, 0, BAR * 4))
+    const city = insertClip(v1, clip(P.horizon, BAR * 4, BAR * 4))
+    const build = insertClip(v1, clip(P.infrastructure, BAR * 8, BAR * 8))
     const dropClip = insertClip(v1, createSequenceClip({ sequenceId: drop.id, name: 'Drop', start: BAR * 16, duration: BAR * 8 }))
-    const brk = insertClip(v1, clip(P.softGlow, BAR * 24, BAR * 4))
-    const finale = insertClip(v1, clip(P.blueMandala, BAR * 28, BAR * 4))
+    const brk = insertClip(v1, clip(P.softWaves, BAR * 24, BAR * 4))
+    const finale = insertClip(v1, clip(P.minimumLegroom, BAR * 28, BAR * 4))
     addTransition(v1, { from: null, to: intro.id, duration: BAR, preset: 'dissolve' })
-    cut(v1, intro, build, 'luma', BAR)
+    cut(v1, intro, city, 'luma', BAR)
+    cut(v1, city, build, 'glitch', BEAT)
     cut(v1, build, dropClip, 'flash', BEAT * 2)
     cut(v1, dropClip, brk, 'iris', BAR)
     cut(v1, brk, finale, 'glitch', BEAT)
     addTransition(v1, { from: finale.id, to: null, duration: BAR, preset: 'dissolve' })
 
-    insertClip(main.tracks[1], clip(P.scope, BAR * 28, BAR * 4, { blend: 'add', opacity: 0.35 }))
+    insertClip(main.tracks[1], clip(P.orthoLandscape, BAR * 28, BAR * 4, { blend: 'difference', opacity: 0.6 }))
 
-    insertClip(main.audioTracks[0], createAudioClip({ mediaId: 'med_demo_drums', name: 'Demo drums', start: 0, duration: DEMO_DURATION }))
-    insertClip(main.audioTracks[1], createAudioClip({ mediaId: 'med_demo_music', name: 'Demo music', start: 0, duration: DEMO_DURATION }))
+    const fadeOut = BAR
+    insertClip(main.audioTracks[0], Object.assign(createAudioClip({ mediaId: 'med_refinery_drums', name: 'Refinery drums', start: 0, duration: DEMO_DURATION }), { fadeOut }))
+    insertClip(main.audioTracks[1], Object.assign(createAudioClip({ mediaId: 'med_refinery_synths', name: 'Refinery synths', start: 0, duration: DEMO_DURATION }), { fadeOut }))
 
     addMarker(main, 0, 'Intro')
     addMarker(main, BAR * 8, 'Build')

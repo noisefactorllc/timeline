@@ -30,7 +30,7 @@ try {
 
 const { Store } = await import('./store.js')
 const { AudioEngine } = await import('./audio/engine.js')
-const { importAudioFile, getAudioBuffer } = await import('./audio/media.js')
+const { importAudioFile, getAudioBuffer, usesEarlierDemo } = await import('./audio/media.js')
 const { RendererPool } = await import('./render/pool.js')
 const { SequenceRenderer } = await import('./render/sequenceRenderer.js')
 const { Thumbnails } = await import('./render/thumbnails.js')
@@ -942,7 +942,12 @@ async function prepareAudio() {
     if (!seq) return
     const project = store.project
     // Decode media first so waveforms can draw while the mix renders.
-    await Promise.all(seq.audioTracks.flatMap(t => t.clips.map(c => getAudioBuffer(project.media[c.mediaId]).catch(() => null))))
+    const failed = []
+    await Promise.all(seq.audioTracks.flatMap(t => t.clips.map(c => getAudioBuffer(project.media[c.mediaId]).catch(err => {
+        failed.push(err)
+        return null
+    }))))
+    if (failed.length) actions.status(failed[0]?.message || 'Some audio could not be loaded')
     timeline.render()
     await audio.mix(project, seq)
     dirty = true
@@ -1014,7 +1019,8 @@ setBoot('Opening your project')
 let project = null
 try {
     const last = prefs.lastProjectId ? await loadProject(prefs.lastProjectId) : null
-    project = last || null
+    // An earlier demo stays saved under Open project; the current demo opens instead.
+    project = last && !usesEarlierDemo(last) ? last : null
 } catch (err) {
     console.warn('[timeline] could not read saved projects', err)
 }
