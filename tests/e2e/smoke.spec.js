@@ -60,7 +60,7 @@ test('every transition and post preset compiles', async ({ page }) => {
 })
 
 test('the boot screen reports each step and finishes at 100%', async ({ page }) => {
-    await boot(page)
+    await boot(page, { demo: false })
     const state = await page.evaluate(() => ({
         percent: document.querySelector('.tl-boot-percent').textContent,
         steps: Object.fromEntries([...document.querySelectorAll('.tl-boot-steps [data-step]')].map(li => [
@@ -70,7 +70,7 @@ test('the boot screen reports each step and finishes at 100%', async ({ page }) 
     expect(state.percent).toBe('100%')
     for (const [id, step] of Object.entries(state.steps)) expect(step.state, id).toBe('done')
     expect(state.steps.engine.detail).toMatch(/KB|MB/)
-    expect(state.steps.project.detail).toBe('Demo: Refinery')
-    expect(state.steps.audio.detail).toMatch(/MB/)
+    expect(state.steps.project.detail).toBe('Untitled project')
+    expect(state.steps.audio.detail).toBe('none')
     expect(state.steps.programs.detail).toMatch(/^\d+ compiled$/)
 })

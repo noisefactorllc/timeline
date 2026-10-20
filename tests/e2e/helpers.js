@@ -1,11 +1,20 @@
 // Shared helpers: boot the app and wait until a frame is fully compiled.
 
-export async function boot(page, { pauseThumbnails = true } = {}) {
+export async function boot(page, { pauseThumbnails = true, demo = true } = {}) {
     const errors = []
     page.on('pageerror', err => errors.push(err.message))
     await page.goto('/index.html')
     await page.waitForFunction(() => window.__timeline?.ready === true, null, { timeout: 180_000 })
     if (pauseThumbnails) await page.evaluate(() => { window.__timeline.thumbs.paused = true })
+    if (demo) {
+        await page.evaluate(async () => {
+            const tl = window.__timeline
+            await tl.actions.openDemo()
+            const drop = tl.store.seq.markers.find(m => m.name === 'Drop')
+            if (drop) tl.actions.seek(drop.time + 1)
+        })
+        await settleAt(page, await page.evaluate(() => window.__timeline.store.playhead))
+    }
     return errors
 }
 

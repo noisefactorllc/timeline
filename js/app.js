@@ -1,7 +1,7 @@
 /**
  * Timeline: cut Noisemaker DSL programs to music.
  *
- * Boot loads the engine, opens the last project (or the demo), and wires
+ * Boot loads the engine, opens the last project (or a blank one), and wires
  * the store, audio engine, renderer pool and views together. One
  * requestAnimationFrame loop drives playback: the audio clock sets the
  * playhead, the playhead's frame is rendered once, and nothing renders
@@ -43,7 +43,7 @@ const MODULES = [
 ]
 let modulesLoaded = 0
 const [
-    { Store }, { AudioEngine }, { importMediaFile, getAudioBuffer, usesEarlierDemo, setMediaSource }, { RendererPool },
+    { Store }, { AudioEngine }, { importMediaFile, getAudioBuffer, setMediaSource }, { RendererPool },
     { SequenceRenderer }, { Thumbnails }, { TimelineView }, { MonitorView }, { InspectorView }, { LibraryView },
     { ExportDialog }, { askText, askConfirm }, { createDemoProject }, { transitionPreset, postPreset, DEFAULT_TRANSITION },
     model, edits, { frameAt, beatSeconds, barSeconds, clamp },
@@ -1337,18 +1337,14 @@ if (projectParam) {
     }
     if (!project) {
         try {
-            const last = prefs.lastProjectId ? await loadProject(prefs.lastProjectId) : null
-            // An earlier demo stays saved under Open project; the current demo opens instead.
-            project = last && !usesEarlierDemo(last) ? last : null
+            project = prefs.lastProjectId ? await loadProject(prefs.lastProjectId) : null
         } catch (err) {
             console.warn('[timeline] could not read saved projects', err)
         }
     }
 }
-let firstVisit = false
 if (!project) {
-    project = createDemoProject()
-    firstVisit = true
+    project = model.createProject()
     try { await saveProject(project) } catch { /* storage unavailable; the project still works */ }
 }
 setMediaSource(opened.source || null)
@@ -1356,11 +1352,6 @@ opened.problems = [...(opened.problems || []), ...(await registerProjectEffects(
 store.openProject(project, opened)
 watchFolder()
 boot.done('project', project.name)
-if (firstVisit) {
-    // Open the demo on its drop rather than on the fade from black.
-    const drop = store.seq.markers.find(m => m.name === 'Drop')
-    if (drop) store.setPlayhead(drop.time + 1)
-}
 resizePreview()
 timeline.zoomToFit()
 refreshChrome()

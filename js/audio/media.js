@@ -39,14 +39,6 @@ function decoder() {
 }
 
 /**
- * True for a project made from an earlier demo. Those generated their
- * soundtrack in the browser from a recipe, and the generator is gone.
- */
-export function usesEarlierDemo(project) {
-    return Object.values(project?.media || {}).some(m => m.recipe)
-}
-
-/**
  * Decoded AudioBuffer for a project media record (cached). `onProgress`
  * receives { fraction, received, total } while a bundled file downloads
  * (bytes) and decodes.
