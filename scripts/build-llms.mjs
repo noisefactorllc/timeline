@@ -44,17 +44,19 @@ Agents in Claude Code can install the plugin instead of reading this file:
 
 Other Noise Factor apps an agent can control: Noisedeck
 (https://noisedeck.app/llms-full.txt), Polymorphic
-(https://polymorphic.noisedeck.app/llms.txt), Visualize
-(https://visualize.noisedeck.app/llms.txt) and HD4
-(https://hd4.noisefactor.io/llms.txt).
+(https://polymorphic.noisedeck.app/llms-full.txt), Visualize
+(https://visualize.noisedeck.app/llms-full.txt), HD4
+(https://hd4.noisefactor.io/llms-full.txt), Foundry
+(https://foundry.noisedeck.app/llms-full.txt) and Shade
+(https://shade.noisedeck.app/llms-full.txt).
 `
 
 const PROGRAMS_FROM_APPS = `
 ## Programs from the person's other apps
 
 A clip's \`dsl\` is a Noisemaker program, the same language that Noisedeck,
-Polymorphic, Visualize and HD4 run. When the person has Noisedeck, Polymorphic
-or Visualize online, the Seance agent tool reads and writes its program
+Polymorphic, Visualize, HD4, Foundry and Shade run. When the person has one of
+those apps online, the Seance agent tool reads and writes its program
 (https://noisedeck.app/llms-full.txt explains how to get it and join):
 
 - Use a program from the app in a clip: \`node seance-agent.mjs program noisedeck\`,
