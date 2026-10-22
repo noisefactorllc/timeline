@@ -41,14 +41,6 @@ The full guide adds the project schema: ${SITE}/llms-full.txt
 Agents in Claude Code can install the plugin instead of reading this file:
 \`/plugin marketplace add noisefactorllc/timeline\`, then
 \`/plugin install timeline@noisefactor-timeline\`.
-
-Other Noise Factor apps an agent can control: Noisedeck
-(https://noisedeck.app/llms-full.txt), Polymorphic
-(https://polymorphic.noisedeck.app/llms-full.txt), Visualize
-(https://visualize.noisedeck.app/llms-full.txt), HD4
-(https://hd4.noisefactor.io/llms-full.txt), Foundry
-(https://foundry.noisedeck.app/llms-full.txt) and Shade
-(https://shade.noisedeck.app/llms-full.txt).
 `
 
 const PROGRAMS_FROM_APPS = `

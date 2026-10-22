@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { spawn } from 'node:child_process'
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -107,6 +108,53 @@ test('the command line runs a project with a custom effect kept as files in its 
         const shot = await run(['snapshot', dir, '--url', url, '--at', '1', '--scale', '0.25', '--json'])
         expect(shot.status, shot.stderr).toBe(0)
     } finally {
+        rmSync(dir, { recursive: true, force: true })
+    }
+})
+
+test('the command line does not serve a symlink outside the project folder', async ({ baseURL }) => {
+    const dir = mkdtempSync(join(tmpdir(), 'timeline-cli-boundary-'))
+    try {
+        const project = join(dir, 'project')
+        mkdirSync(join(project, 'media'), { recursive: true })
+        copyFileSync('media/refinery-drums.flac', join(dir, 'outside.flac'))
+        symlinkSync(join(dir, 'outside.flac'), join(project, 'media', 'drums.flac'))
+        writeProject(project, GOOD)
+
+        const result = await run(['check', project, '--url', `${baseURL}/`, '--json'])
+        expect(result.status, result.stderr).toBe(1)
+        expect(JSON.parse(result.stdout).errors.some(error => error.where === 'media "drums"')).toBe(true)
+    } finally {
+        rmSync(dir, { recursive: true, force: true })
+    }
+})
+
+test('the command line fails a check when the page throws an exception', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'timeline-cli-page-error-'))
+    const server = createServer((_request, response) => {
+        response.setHeader('Content-Type', 'text/html')
+        response.end(`<script>
+            window.__timeline = {
+                ready: true,
+                check: () => new Promise(resolve => {
+                    setTimeout(() => { throw new Error('check page failure') }, 0)
+                    setTimeout(() => resolve({ project: 'CLI test', sequences: [], programs: 0, errors: [], warnings: [], ok: true }), 100)
+                }),
+            }
+        </script>`)
+    })
+    try {
+        writeFileSync(join(dir, 'project.json'), '{}')
+        await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+        const url = `http://127.0.0.1:${server.address().port}/`
+        const result = await run(['check', dir, '--url', url, '--json'])
+        expect(result.status, result.stderr).toBe(1)
+        const report = JSON.parse(result.stdout)
+        expect(report.ok).toBe(false)
+        expect(report.pageErrors.join('\n')).toContain('check page failure')
+        expect(report.errors.some(error => error.where === 'page' && error.message.includes('check page failure'))).toBe(true)
+    } finally {
+        await new Promise(resolve => server.close(resolve))
         rmSync(dir, { recursive: true, force: true })
     }
 })

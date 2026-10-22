@@ -41,13 +41,15 @@ To run it without installing, use `node cli/timeline.mjs` in place of `timeline`
 | `--no-audio` | Leaves the sound out. |
 | `--out FILE` | Writes to that file instead. |
 
-Every command also takes these:
+All commands also take these:
 
 | Option | What it does |
 |---|---|
 | `--json` | Writes output you can parse. |
-| `--sequence NAME` | Chooses a sequence other than the main one. |
 | `--url URL` | Runs another copy of the app instead of timeline.noisedeck.app. |
+
+`--sequence NAME` selects a sequence other than the main one for `snapshot`
+and `render`. `check` always checks the whole project.
 
 ### The Claude Code plugin
 

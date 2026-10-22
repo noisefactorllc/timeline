@@ -7,6 +7,12 @@ description: Use when making a music video, a product ad or any other video with
 
 Timeline cuts Noisemaker programs to music on a timeline. A video is a **project folder**: a `project.json` and the media files it names. You write the folder. The person watches it take shape in Timeline, and the command-line tool checks it, snapshots frames and renders it.
 
+For the roles and control paths of the other Noise Factor visual products,
+read the product map at https://noisedeck.app/llms-full.txt. Noisedeck,
+Polymorphic, Visualize, HD4, Foundry and Shade run Noisemaker programs in
+live browser sessions; Layers edits a separate layer document. Timeline cuts
+those programs and local media into a video through a project folder and CLI.
+
 Media never leaves the computer. Timeline reads the folder inside the browser, and the tool answers Timeline's requests for the folder's files from disk. Never upload the person's media or send it anywhere.
 
 ## The tool
@@ -19,7 +25,7 @@ The tool is `cli/timeline.mjs`, two folders up from this skill's base directory:
 | `node <cli> snapshot <folder> --at 2,8.5,0:31` | Writes PNG frames to `<folder>/snapshots`, rendered exactly as export renders them. Add `--scale 0.5` for speed. Look at every frame you make. |
 | `node <cli> render <folder>` | Writes the video to `<folder>/renders/<sequence>.mp4`. Options: `--from 0:10 --to 0:20`, `--scale 0.5`, `--format webm`, `--quality medium\|high\|best`, `--no-audio`, `--out FILE`. |
 
-Every command takes `--json` for output you can parse, and `--sequence NAME` to choose a sequence other than the main one.
+Every command takes `--json` for output you can parse. `snapshot` and `render` take `--sequence NAME` to choose a sequence other than the main one. `check` checks the whole project.
 
 ## Working with the person
 

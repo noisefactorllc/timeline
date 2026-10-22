@@ -13,7 +13,7 @@
 
 import { spawn } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync, mkdirSync, writeFileSync, openSync, writeSync, closeSync } from 'node:fs'
-import { readFile, stat } from 'node:fs/promises'
+import { readFile, realpath, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep, extname, basename } from 'node:path'
 
@@ -40,8 +40,17 @@ and is written to <folder>/renders/<sequence>.<format> unless --out names a file
 function parseArgs(argv) {
     const [command, folder, ...rest] = argv
     const opts = { command, folder, url: DEFAULT_URL, json: false, scale: 1, format: 'mp4', quality: 'high', audio: true }
+    const allowed = {
+        check: new Set(['--url', '--json']),
+        snapshot: new Set(['--url', '--json', '--at', '--out', '--sequence', '--scale']),
+        render: new Set(['--url', '--json', '--out', '--from', '--to', '--sequence', '--scale', '--format', '--quality', '--no-audio']),
+    }
     for (let i = 0; i < rest.length; i++) {
         const arg = rest[i]
+        if (allowed[command] && !allowed[command].has(arg) &&
+            Object.values(allowed).some(options => options.has(arg))) {
+            throw new Error(`${arg} is not supported by ${command}`)
+        }
         const value = () => {
             if (i + 1 >= rest.length) throw new Error(`${arg} needs a value`)
             return rest[++i]
@@ -162,6 +171,7 @@ class Cdp {
 /** Answer the app's requests under the project prefix from the folder on disk. */
 async function serveFolder(cdp, session, folder, base) {
     const root = resolve(folder)
+    const realRoot = await realpath(root)
     const prefix = new URL(PROJECT_PREFIX, base).href
     cdp.on('Fetch.requestPaused', async (params, sessionId) => {
         if (sessionId !== session) return
@@ -180,9 +190,12 @@ async function serveFolder(cdp, session, folder, base) {
             const relative = decodeURIComponent(new URL(request.url).pathname.slice(new URL(prefix).pathname.length))
             const path = resolve(root, relative)
             if (path !== root && !path.startsWith(root + sep)) return reply(403, Buffer.from('outside the project folder'))
-            const info = await stat(path).catch(() => null)
+            const real = await realpath(path).catch(() => null)
+            if (!real) return reply(404, Buffer.from(`${relative} is not in the project folder`))
+            if (real !== realRoot && !real.startsWith(realRoot + sep)) return reply(403, Buffer.from('outside the project folder'))
+            const info = await stat(real).catch(() => null)
             if (!info?.isFile()) return reply(404, Buffer.from(`${relative} is not in the project folder`))
-            return reply(200, await readFile(path), TYPES[extname(path).toLowerCase()] || 'application/octet-stream')
+            return reply(200, await readFile(real), TYPES[extname(path).toLowerCase()] || 'application/octet-stream')
         } catch (err) {
             return reply(500, Buffer.from(String(err?.message || err)))
         }
@@ -242,14 +255,18 @@ async function check(opts) {
     const { cdp, evaluate, pageErrors } = await openApp(opts)
     try {
         const report = await evaluate('window.__timeline.check()')
-        if (pageErrors.length) report.pageErrors = pageErrors
+        if (pageErrors.length) {
+            report.pageErrors = pageErrors
+            report.errors.push(...pageErrors.map(message => ({ where: 'page', message })))
+            report.ok = false
+        }
         if (opts.json) console.log(JSON.stringify(report, null, 2))
         else {
             console.log(`${report.project}: ${report.sequences.length} ${report.sequences.length === 1 ? 'sequence' : 'sequences'}, ${report.programs} programs`)
             for (const s of report.sequences) console.log(`  ${s.name} (${s.id}): ${s.size}, ${s.fps} fps, ${s.duration} s, ${s.bpm} bpm, ${s.clips} clips, ${s.audioClips} audio clips`)
             printProblems(report)
-            for (const e of pageErrors) console.log(`error    page: ${e}`)
-            console.log(report.ok ? 'ok' : `${report.errors.length} ${report.errors.length === 1 ? 'error' : 'errors'}`)
+            const errors = report.errors.length
+            console.log(report.ok ? 'ok' : `${errors} ${errors === 1 ? 'error' : 'errors'}`)
         }
         return report.ok ? 0 : 1
     } finally {
