@@ -359,8 +359,10 @@ async function render(opts) {
 async function main() {
     const argv = process.argv.slice(2)
     // With --json a failure is printed as JSON too, so the output always parses.
+    // Until the arguments parse, --json is wherever it appears.
+    let json = argv.includes('--json')
     const fail = (code, message, text = message) => {
-        if (argv.includes('--json')) console.log(JSON.stringify({ ok: false, error: { message } }, null, 2))
+        if (json) console.log(JSON.stringify({ ok: false, error: { message } }, null, 2))
         else console.error(text)
         return code
     }
@@ -370,6 +372,7 @@ async function main() {
     } catch (err) {
         return fail(2, err.message, `${err.message}\n\n${USAGE}`)
     }
+    json = opts.json
     if (!['check', 'snapshot', 'render'].includes(opts.command) || !opts.folder) {
         return fail(2, 'Give a command (check, snapshot or render) and a project folder.', USAGE)
     }

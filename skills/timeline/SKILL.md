@@ -25,7 +25,7 @@ The tool is `cli/timeline.mjs`, two folders up from this skill's base directory:
 | `node <cli> snapshot <folder> --at 2,8.5,0:31` | Writes PNG frames to `<folder>/snapshots`, rendered exactly as export renders them. Add `--scale 0.5` for speed. Look at every frame you make. |
 | `node <cli> render <folder>` | Writes the video to `<folder>/renders/<sequence>.mp4`. Options: `--from 0:10 --to 0:20`, `--scale 0.5`, `--format webm`, `--quality medium\|high\|best`, `--no-audio`, `--out FILE`. |
 
-Every command takes `--json` for output you can parse. With `--json`, a failure prints `{ "ok": false, "error": { "message" } }`. Exit code 1 means the project has errors or the command failed; 2 means the command line was wrong. `snapshot` and `render` take `--sequence NAME` to choose a sequence other than the main one. `check` checks the whole project.
+Every command takes `--json` for output you can parse. Exit code 1 means `check` found errors or the command failed: with `--json`, `check` prints its report with `"ok": false` and the `errors`, and a failure prints `{ "ok": false, "error": { "message" } }`. Exit code 2 means an option was unknown or given to a command that does not take it. `snapshot` and `render` take `--sequence NAME` to choose a sequence other than the main one. `check` checks the whole project.
 
 ## Working with the person
 
@@ -38,7 +38,7 @@ Every command takes `--json` for output you can parse. With `--json`, a failure 
 
 ## project.json
 
-The full format, with every field, default and rule, is the JSON schema at `<base>/../../schema/project.schema.json` (also at https://timeline.noisedeck.app/schema/project.schema.json). Only `sequences` is required at the top. Every clip needs a `start` and a `duration`, and a program clip needs its `dsl`; `check` reports each one that is missing as an error. Other fields get a default. Here is a short music video:
+The full format, with every field, default and rule, is the JSON schema at `<base>/../../schema/project.schema.json` (also at https://timeline.noisedeck.app/schema/project.schema.json). Only `sequences` is required at the top. Every clip on a video track needs a `start` and a `duration`, and a program clip needs its `dsl`; `check` reports each one that is missing as an error. An audio clip needs its `mediaId`; it starts at 0 and lasts as long as its file (or to the end of the sequence) unless told otherwise. Other fields get a default. Here is a short music video:
 
 ```json
 {
@@ -88,7 +88,7 @@ The full format, with every field, default and rule, is the JSON schema at `<bas
 - **Sources:**
   - Curated programs: https://visualize.noisedeck.app/data/programs.json, where each entry has a `title`, `tags` and its `dsl`.
   - Every effect: https://shaders.noisedeck.app/1/effects/manifest.json, keyed `namespace/name`. It has no parameters.
-  - An effect's parameters, with types, defaults and ranges: `https://raw.githubusercontent.com/noisefactorllc/noisemaker/main/shaders/effects/<namespace>/<name>/help.md`, such as `.../synth/noise/help.md`. `check` names any argument that the effect does not take.
+  - An effect's parameters, with types, defaults and ranges: `https://raw.githubusercontent.com/noisefactorllc/noisemaker/v<version>/shaders/effects/<namespace>/<name>/help.md`, where `<version>` is the `version` in https://shaders.noisedeck.app/1/deployment-meta.json, the engine that the apps run, such as `.../v1.0.309/shaders/effects/synth/noise/help.md`. `check` names any argument that the effect does not take.
   - The language: https://docs.noisemaker.app/shaders/language/ and https://noisemaker.app/llms-full.txt.
 - **Sound:** put `audio(band: audioBand.low, min: 0.2, max: 0.8)` where a number goes.
   - Bands are `low`, `mid`, `high` and `vol`.
