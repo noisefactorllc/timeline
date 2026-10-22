@@ -19,3 +19,15 @@ for (const [command, option, value] of [
         assert.match(result.stderr, new RegExp(option))
     })
 }
+
+test('with --json, a failure prints JSON', () => {
+    const missing = spawnSync(process.execPath, [CLI, 'check', '/no-such-timeline-project', '--json'], { encoding: 'utf8' })
+    assert.equal(missing.status, 1, missing.stderr)
+    const failure = JSON.parse(missing.stdout)
+    assert.equal(failure.ok, false)
+    assert.match(failure.error.message, /project\.json does not exist/)
+
+    const usage = spawnSync(process.execPath, [CLI, 'check', '/no-such-timeline-project', '--at', '2', '--json'], { encoding: 'utf8' })
+    assert.equal(usage.status, 2, usage.stderr)
+    assert.match(JSON.parse(usage.stdout).error.message, /--at/)
+})

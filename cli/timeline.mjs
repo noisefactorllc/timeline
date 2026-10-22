@@ -357,22 +357,26 @@ async function render(opts) {
 }
 
 async function main() {
+    const argv = process.argv.slice(2)
+    // With --json a failure is printed as JSON too, so the output always parses.
+    const fail = (code, message, text = message) => {
+        if (argv.includes('--json')) console.log(JSON.stringify({ ok: false, error: { message } }, null, 2))
+        else console.error(text)
+        return code
+    }
     let opts
     try {
-        opts = parseArgs(process.argv.slice(2))
+        opts = parseArgs(argv)
     } catch (err) {
-        console.error(`${err.message}\n\n${USAGE}`)
-        return 2
+        return fail(2, err.message, `${err.message}\n\n${USAGE}`)
     }
     if (!['check', 'snapshot', 'render'].includes(opts.command) || !opts.folder) {
-        console.error(USAGE)
-        return 2
+        return fail(2, 'Give a command (check, snapshot or render) and a project folder.', USAGE)
     }
     try {
         return opts.command === 'check' ? await check(opts) : opts.command === 'snapshot' ? await snapshot(opts) : await render(opts)
     } catch (err) {
-        console.error(err?.message || err)
-        return 1
+        return fail(1, String(err?.message || err), err?.message || err)
     }
 }
 

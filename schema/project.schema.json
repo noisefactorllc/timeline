@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://timeline.noisedeck.app/schema/project.schema.json",
   "title": "Timeline project",
-  "description": "project.json in a Timeline project folder. Media files (audio, images, video) sit in the same folder and are named by relative path. Times are in seconds. Only \"sequences\" is required; everything else has a default. Ids are optional: a track, clip, transition or marker without one gets an id from its place, such as \"main/V1/2\". Give a clip an id when a transition names it.",
+  "description": "project.json in a Timeline project folder. Media files (audio, images, video) sit in the same folder and are named by relative path. Times are in seconds. Only \"sequences\" is required at the top. Every clip needs \"start\" and \"duration\", and a program clip needs \"dsl\"; other fields have a default. Ids are optional: a track, clip, transition or marker without one gets an id from its place, such as \"main/V1/2\". Give a clip an id when a transition names it.",
   "type": "object",
   "required": [
     "sequences"
@@ -413,17 +413,22 @@
         },
         "size": {
           "type": "number",
-          "exclusiveMinimum": 0,
+          "minimum": 0.001,
+          "maximum": 2,
           "default": 0.09,
           "description": "Text height as a fraction of the frame height."
         },
         "lineHeight": {
           "type": "number",
+          "minimum": 0.1,
+          "maximum": 10,
           "default": 1.1,
           "description": "Line spacing as a multiple of the size."
         },
         "letterSpacing": {
           "type": "number",
+          "minimum": -1,
+          "maximum": 5,
           "default": 0,
           "description": "Extra space between letters as a fraction of the size."
         },
@@ -443,7 +448,8 @@
         },
         "maxWidth": {
           "type": "number",
-          "exclusiveMinimum": 0,
+          "minimum": 0.01,
+          "maximum": 10,
           "default": 0.8,
           "description": "Wrap width as a fraction of the frame width."
         },
