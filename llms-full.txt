@@ -867,8 +867,7 @@ This is https://timeline.noisedeck.app/schema/project.schema.json.
     "audioClip": {
       "type": "object",
       "required": [
-        "mediaId",
-        "start"
+        "mediaId"
       ],
       "properties": {
         "id": {
@@ -882,7 +881,8 @@ This is https://timeline.noisedeck.app/schema/project.schema.json.
           "type": "string"
         },
         "start": {
-          "$ref": "#/$defs/seconds"
+          "$ref": "#/$defs/seconds",
+          "default": 0
         },
         "duration": {
           "type": "number",

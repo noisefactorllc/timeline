@@ -687,8 +687,7 @@
     "audioClip": {
       "type": "object",
       "required": [
-        "mediaId",
-        "start"
+        "mediaId"
       ],
       "properties": {
         "id": {
@@ -702,7 +701,8 @@
           "type": "string"
         },
         "start": {
-          "$ref": "#/$defs/seconds"
+          "$ref": "#/$defs/seconds",
+          "default": 0
         },
         "duration": {
           "type": "number",
