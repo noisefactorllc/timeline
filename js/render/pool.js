@@ -31,11 +31,17 @@ export class RendererPool {
         return this.frame
     }
 
+    /**
+     * The least recently used or requested entry not needed this frame.
+     * A program still compiling has never been used, so its request is
+     * what keeps it from being the next eviction.
+     */
     _evictable() {
+        const recency = entry => Math.max(entry.lastUsed, entry.requestedFrame)
         let victim = null
         for (const entry of this.entries.values()) {
-            if (entry.lastUsed >= this.frame || entry.reservedFrame >= this.frame || entry.pinned) continue
-            if (!victim || entry.lastUsed < victim.lastUsed) victim = entry
+            if (entry.lastUsed >= this.frame || entry.requestedFrame >= this.frame || entry.reservedFrame >= this.frame || entry.pinned) continue
+            if (!victim || recency(entry) < recency(victim)) victim = entry
         }
         return victim
     }
@@ -59,9 +65,10 @@ export class RendererPool {
                 renderer = new ProgramRenderer({ width: this.width, height: this.height, audioState: this.audioState })
             }
             renderer.resize(this.width, this.height)
-            entry = { key, renderer, wanted: null, compiled: null, lastUsed: -1, reservedFrame: -1, job: null }
+            entry = { key, renderer, wanted: null, compiled: null, lastUsed: -1, requestedFrame: -1, reservedFrame: -1, job: null }
             this.entries.set(key, entry)
         }
+        entry.requestedFrame = this.frame
         if (entry.wanted !== dsl) {
             entry.wanted = dsl
             this._enqueue(entry, priority)
