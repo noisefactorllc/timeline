@@ -12,6 +12,7 @@ import { initEscapeHandler, initializeTooltips, showToast, AboutDialog, hasOpenE
 import { BootProgress, formatBytes } from './ui/bootProgress.js'
 import { ENGINE_URL } from './noisemaker/cdn.js'
 import { fetchBytes } from './fetchBytes.js'
+import { buildInfoFromMeta } from './ui/buildInfo.js'
 
 const boot = new BootProgress(document.getElementById('boot'))
 
@@ -837,7 +838,8 @@ const about = new AboutDialog({
 })
 about.setNoisemakerFromUrl?.('https://shaders.noisedeck.app/1/deployment-meta.json')
 fetch('deployment-meta.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).then(meta => {
-    if (meta?.git_hash) about.setBuild?.({ hash: meta.git_hash, deployed: meta.date })
+    const build = buildInfoFromMeta(meta)
+    if (build) about.setBuild?.(build)
 }).catch(() => {})
 
 function showRecent(projects) {
