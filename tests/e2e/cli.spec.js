@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { spawn } from 'node:child_process'
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -155,6 +155,27 @@ test('the command line fails a check when the page throws an exception', async (
         expect(report.errors.some(error => error.where === 'page' && error.message.includes('check page failure'))).toBe(true)
     } finally {
         await new Promise(resolve => server.close(resolve))
+        rmSync(dir, { recursive: true, force: true })
+    }
+})
+
+test('render fails and writes no file for a range outside the sequence', async ({ baseURL }) => {
+    const dir = mkdtempSync(join(tmpdir(), 'timeline-cli-range-'))
+    try {
+        writeFileSync(join(dir, 'project.json'), JSON.stringify({
+            sequences: { main: { duration: 4, post: { enabled: false }, tracks: [{ clips: [{ start: 0, duration: 4, dsl: GOOD }] }] } },
+        }))
+        const url = `${baseURL}/`
+        for (const [range, value] of [[['--from', '3', '--to', '5'], 5], [['--from', '5'], 5]]) {
+            const result = await run(['render', dir, '--url', url, ...range, '--scale', '0.25', '--json'])
+            expect(result.status, result.stdout + result.stderr).toBe(1)
+            expect(JSON.parse(result.stdout).error.message).toContain(`${value} s is outside main (0 to 4 s)`)
+            expect(existsSync(join(dir, 'renders')), `${range.join(' ')} wrote a file`).toBe(false)
+        }
+        const inside = await run(['render', dir, '--url', url, '--from', '3', '--to', '4', '--scale', '0.25', '--json'])
+        expect(inside.status, inside.stderr).toBe(0)
+        expect(JSON.parse(inside.stdout).frames).toBe(30)
+    } finally {
         rmSync(dir, { recursive: true, force: true })
     }
 })

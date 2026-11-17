@@ -61,8 +61,8 @@ function parseArgs(argv) {
         else if (arg === '--out') opts.out = value()
         else if (arg === '--sequence') opts.sequence = value()
         else if (arg === '--scale') opts.scale = Number(value())
-        else if (arg === '--from') opts.from = parseTime(value())
-        else if (arg === '--to') opts.to = parseTime(value())
+        else if (arg === '--from') opts.from = value()
+        else if (arg === '--to') opts.to = value()
         else if (arg === '--format') opts.format = value()
         else if (arg === '--quality') opts.quality = value()
         else if (arg === '--no-audio') opts.audio = false
@@ -71,10 +71,19 @@ function parseArgs(argv) {
     return opts
 }
 
+// A time is seconds or minutes:seconds. An empty part is not 0 seconds, and a
+// bad time fails the command (exit 1), as a time outside the sequence does.
 function parseTime(text) {
-    const parts = text.trim().split(':').map(Number)
-    if (!parts.length || parts.some(n => !Number.isFinite(n) || n < 0)) throw new Error(`"${text}" is not a time; use seconds or minutes:seconds`)
+    const parts = text.trim().split(':').map(part => part.trim() === '' ? NaN : Number(part))
+    if (parts.some(n => !Number.isFinite(n) || n < 0)) throw new Error(`"${text}" is not a time; use seconds or minutes:seconds`)
     return parts.reduce((total, n) => total * 60 + n, 0)
+}
+
+/** A comma-separated list of times; an empty entry names the whole list. */
+function parseTimes(text) {
+    const parts = text.split(',')
+    if (parts.some(part => part.trim() === '')) throw new Error(`"${text}" is not a time; use seconds or minutes:seconds`)
+    return parts.map(parseTime)
 }
 
 function findChrome() {
@@ -277,7 +286,7 @@ async function check(opts) {
 async function snapshot(opts) {
     if (!opts.at) throw new Error('snapshot needs --at, such as --at 4,12.5,1:04')
     if (!(opts.scale > 0 && opts.scale <= 1)) throw new Error('--scale must be more than 0 and at most 1')
-    const times = opts.at.split(',').map(parseTime)
+    const times = parseTimes(opts.at)
     const out = resolve(opts.out || join(opts.folder, 'snapshots'))
     const { cdp, evaluate } = await openApp(opts)
     try {
@@ -310,10 +319,12 @@ async function render(opts) {
     if (!['mp4', 'webm'].includes(opts.format)) throw new Error('--format must be mp4 or webm')
     if (!['medium', 'high', 'best'].includes(opts.quality)) throw new Error('--quality must be medium, high or best')
     if (!(opts.scale > 0 && opts.scale <= 1)) throw new Error('--scale must be more than 0 and at most 1')
+    const start = opts.from === undefined ? undefined : parseTime(opts.from)
+    const end = opts.to === undefined ? undefined : parseTime(opts.to)
     const { cdp, evaluate } = await openApp(opts)
     try {
         const options = JSON.stringify({
-            sequence: opts.sequence, start: opts.from, end: opts.to, scale: opts.scale,
+            sequence: opts.sequence, start, end, scale: opts.scale,
             format: opts.format, quality: opts.quality, includeAudio: opts.audio,
         })
         const started = Date.now()

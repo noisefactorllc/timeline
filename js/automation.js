@@ -122,6 +122,9 @@ export async function renderVideo({ project, renderer, pool, audio, state, seque
     const seq = Object.values(project.sequences).find(s => s.id === sequence || s.name === sequence)
         || (sequence ? null : project.sequences[project.mainSequenceId])
     if (!seq) throw new Error(`There is no sequence "${sequence}"`)
+    for (const time of [start, end]) {
+        if (Number.isFinite(time) && (time < 0 || time > seq.duration)) throw new Error(`${time} s is outside ${seq.name} (0 to ${seq.duration} s)`)
+    }
     const range = workRange(seq)
     const settings = {
         format,
