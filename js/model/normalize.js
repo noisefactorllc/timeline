@@ -14,8 +14,10 @@
 import {
     SCHEMA_VERSION, BLEND_MODES, DEFAULT_POST_DSL, DEFAULT_PROGRAM_DSL, nestedSequenceIds,
     FIT_MODES, MOTION_PRESETS, TEXT_ALIGN, TEXT_DEFAULTS, TEXT_OUTLINE_DEFAULTS, TEXT_SHADOW_DEFAULTS, GRAPHIC_TYPES,
+    clipEnd,
 } from './project.js'
-import { POST_PRESETS } from '../data/presets.js'
+import { POST_PRESETS, TRANSITIONS } from '../data/presets.js'
+import { ADJACENT_EPS, transitionSpan } from './evaluate.js'
 import { isEaseName } from './ease.js'
 import { KEYABLE, DUCK_DEFAULTS, DUCK_DETECT } from './automation.js'
 
@@ -438,6 +440,20 @@ function checkTransitions(seq, report) {
             if (!isNumber(x.duration) || x.duration <= 0) {
                 report('warning', where, 'needs a "duration" in seconds; it lasts 1 second')
                 x.duration = 1
+            }
+            // Kept, so moving a clip in the editor can still make it play, but it cannot play as written.
+            const ownDsl = typeof x.dsl === 'string' && x.dsl.trim()
+            if (!ownDsl && !TRANSITIONS.some(t => t.id === x.preset)) {
+                report('error', where, `preset "${x.preset}" is not one of ${TRANSITIONS.map(t => t.id).join(', ')}; it plays the ${TRANSITIONS[0].id} preset`)
+            }
+            if (x.from && x.to && !transitionSpan(track, x)) {
+                const a = track.clips.find(c => c.id === x.from)
+                const b = track.clips.find(c => c.id === x.to)
+                if (Math.abs(clipEnd(b) - a.start) <= ADJACENT_EPS) {
+                    report('error', where, `"from" names "${x.from}" and "to" names "${x.to}", but "${x.to}" comes first; "from" is the outgoing clip, so it never plays`)
+                } else {
+                    report('error', where, `"from" clip "${x.from}" ends at ${+clipEnd(a).toFixed(3)} s and "to" clip "${x.to}" starts at ${+b.start.toFixed(3)} s; a transition plays on the cut between clips that meet, so it never plays`)
+                }
             }
             return true
         })

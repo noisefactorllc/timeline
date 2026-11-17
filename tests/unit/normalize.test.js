@@ -79,6 +79,38 @@ test('transitions must name clips on their own track', () => {
     assert.equal(problems.filter(p => p.level === 'error').length, 2)
 })
 
+test('a transition that cannot play as written is an error that names it and says why', () => {
+    // Clips a and b on one track, as [start, duration], and one transition "x".
+    const project = (a, b, transition) => {
+        const raw = minimal()
+        raw.sequences.main.post = { enabled: false }
+        raw.sequences.main.tracks[0] = {
+            clips: [{ id: 'a', start: a[0], duration: a[1], dsl: DSL }, { id: 'b', start: b[0], duration: b[1], dsl: DSL }],
+            transitions: [{ id: 'x', duration: 1, ...transition }],
+        }
+        return normalizeProject(raw)
+    }
+    const control = project([0, 4], [4, 4], { from: 'a', to: 'b', preset: 'wipe' })
+    assert.deepEqual(control.problems, [])
+    assert.equal(control.project.sequences.main.tracks[0].transitions.length, 1)
+
+    const where = 'main › V1 › transition "x"'
+    for (const [name, a, b, transition, reason] of [
+        ['an unknown preset', [0, 4], [4, 4], { from: 'a', to: 'b', preset: 'crossfade' }, /preset "crossfade" is not one of dissolve, .*wipe.*; it plays the dissolve preset/],
+        ['clips with a gap between them', [0, 3], [4, 4], { from: 'a', to: 'b' }, /"from" clip "a" ends at 3 s and "to" clip "b" starts at 4 s; .* never plays/],
+        ['"from" and "to" swapped', [0, 4], [4, 4], { from: 'b', to: 'a' }, /"from" names "b" and "to" names "a", but "a" comes first; "from" is the outgoing clip, so it never plays/],
+    ]) {
+        const { problems } = project(a, b, transition)
+        assert.equal(problems.length, 1, `${name}: ${JSON.stringify(problems)}`)
+        assert.equal(problems[0].level, 'error', name)
+        assert.equal(problems[0].where, where, name)
+        assert.match(problems[0].message, reason, name)
+    }
+
+    // A transition with its own program plays that program, whatever its preset says.
+    assert.deepEqual(project([0, 4], [4, 4], { from: 'a', to: 'b', preset: 'crossfade', dsl: DSL }).problems, [])
+})
+
 test('a nested sequence must exist and must not contain itself', () => {
     const raw = minimal()
     raw.sequences.main.tracks[0].clips.push({ start: 8, duration: 2, sequenceId: 'main' })
