@@ -179,3 +179,28 @@ test('render fails and writes no file for a range outside the sequence', async (
         rmSync(dir, { recursive: true, force: true })
     }
 })
+
+test('a failure in the page prints its one-line message without stack lines', async ({ baseURL }) => {
+    const dir = mkdtempSync(join(tmpdir(), 'timeline-cli-message-'))
+    try {
+        writeFileSync(join(dir, 'project.json'), JSON.stringify({
+            sequences: { main: { duration: 8, post: { enabled: false }, tracks: [{ clips: [{ start: 0, duration: 8, dsl: GOOD }] }] } },
+        }))
+        const url = `${baseURL}/`
+        for (const [args, message] of [
+            [['snapshot', dir, '--at', '1', '--sequence', 'nope'], 'There is no sequence "nope"'],
+            [['render', dir, '--sequence', 'nope'], 'There is no sequence "nope"'],
+            [['snapshot', dir, '--at', '9', '--scale', '0.25'], '9 s is outside main (0 to 8 s)'],
+        ]) {
+            const call = args.filter(a => a !== dir).join(' ')
+            const plain = await run([...args, '--url', url])
+            expect(plain.status, call).toBe(1)
+            expect(plain.stderr.trim(), call).toBe(message)
+            const json = await run([...args, '--url', url, '--json'])
+            expect(json.status, `${call} --json`).toBe(1)
+            expect(JSON.parse(json.stdout), `${call} --json`).toEqual({ ok: false, error: { message } })
+        }
+    } finally {
+        rmSync(dir, { recursive: true, force: true })
+    }
+})

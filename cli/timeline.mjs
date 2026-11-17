@@ -230,9 +230,22 @@ async function openApp(opts) {
         // The folder's name names a project that has none of its own.
         const name = encodeURIComponent(basename(resolve(opts.folder)))
         await cdp.send('Page.navigate', { url: new URL(`?project=${PROJECT_PREFIX}&name=${name}`, base).href }, sessionId)
+        // A failure in the page reads as its message alone, as the CLI's own
+        // failures do: an Error's description would carry its stack.
+        const exceptionMessage = async ({ exception, text }) => {
+            if (exception?.objectId) {
+                const reply = await cdp.send('Runtime.callFunctionOn', {
+                    objectId: exception.objectId,
+                    functionDeclaration: 'function () { return this instanceof Error ? this.message : String(this) }',
+                    returnByValue: true,
+                }, sessionId).catch(() => null)
+                if (typeof reply?.result?.value === 'string') return reply.result.value
+            }
+            return exception?.value !== undefined ? String(exception.value) : exception?.description || text
+        }
         const evaluate = async expression => {
             const { result, exceptionDetails } = await cdp.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId)
-            if (exceptionDetails) throw new Error(exceptionDetails.exception?.description || exceptionDetails.text)
+            if (exceptionDetails) throw new Error(await exceptionMessage(exceptionDetails))
             return result.value
         }
         // Wait for the editor, or for the boot screen to report why it stopped.
