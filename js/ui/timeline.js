@@ -19,6 +19,7 @@ import { showContextMenu } from './contextMenu.js'
 import { clipGainAt, duckRegions, duckGainAt, keyTimes } from '../model/automation.js'
 import { TRANSITIONS } from '../data/presets.js'
 import { splitClip, deleteTransition } from '../model/edit.js'
+import { setTooltip } from './tooltips.js'
 
 const SNAP_PX = 8
 const DRAG_THRESHOLD = 3
@@ -31,6 +32,7 @@ function el(tag, className, attrs = {}) {
     for (const [k, v] of Object.entries(attrs)) {
         if (v === null || v === undefined) continue
         if (k === 'text') node.textContent = v
+        else if (k === 'title') setTooltip(node, v)
         else node.setAttribute(k, v)
     }
     return node
@@ -370,7 +372,7 @@ export class TimelineView {
         if (clip.type === 'program' && this.pool.errorFor(clip.dsl)) node.classList.add('is-error')
         if (isGraphic(clip) && this.graphics?.problemFor(clip)) {
             node.classList.add('is-error')
-            node.title = this.graphics.problemFor(clip)
+            setTooltip(node, this.graphics.problemFor(clip))
         }
         node.style.left = `${this.timeToX(clip.start)}px`
         node.style.width = `${Math.max(2, this.timeToX(clip.duration))}px`

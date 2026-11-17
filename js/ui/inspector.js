@@ -18,6 +18,7 @@ import { formatTimecode, parseTime, barSeconds, beatSeconds } from '../model/tim
 import { transitionSpan, maxTransitionDuration } from '../model/evaluate.js'
 import { TRANSITIONS, POST_PRESETS, transitionPreset, postPreset, audioSnippets } from '../data/presets.js'
 import { transitionDsl } from '../render/sequenceRenderer.js'
+import { setTooltip } from './tooltips.js'
 
 function el(tag, className, attrs = {}) {
     const node = document.createElement(tag)
@@ -25,6 +26,7 @@ function el(tag, className, attrs = {}) {
     for (const [k, v] of Object.entries(attrs)) {
         if (v === null || v === undefined) continue
         if (k === 'text') node.textContent = v
+        else if (k === 'title') setTooltip(node, v)
         else node.setAttribute(k, v)
     }
     return node

@@ -9,6 +9,7 @@
 import { TRANSITIONS, POST_PRESETS } from '../data/presets.js'
 import { STARTER_PROGRAMS } from '../data/demoProject.js'
 import { formatTimecode } from '../model/time.js'
+import { setTooltip } from './tooltips.js'
 
 const LIBRARY_URL = 'https://visualize.noisedeck.app/data/programs.json'
 const TABS = [
@@ -25,6 +26,7 @@ function el(tag, className, attrs = {}) {
     for (const [k, v] of Object.entries(attrs)) {
         if (v === null || v === undefined) continue
         if (k === 'text') node.textContent = v
+        else if (k === 'title') setTooltip(node, v)
         else node.setAttribute(k, v)
     }
     return node

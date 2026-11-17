@@ -1396,7 +1396,7 @@ const programsReady = Promise.race([
     new Promise(resolve => setTimeout(resolve, PROGRAMS_WAIT_MS)).then(() => boot.done('programs', 'still compiling')),
 ])
 await Promise.all([audioReady, programsReady])
-initializeTooltips?.()
+initializeTooltips()
 app.dataset.state = 'ready'
 boot.finish()
 requestAnimationFrame(frame)

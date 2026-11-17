@@ -7,6 +7,7 @@ import { registerEscapeable, unregisterEscapeable } from 'handfish'
 import { exportSequence, probeCodecs, videoBitrate } from '../export/exporter.js'
 import { workRange } from '../model/project.js'
 import { formatTimecode, frameCount } from '../model/time.js'
+import { setTooltip } from './tooltips.js'
 
 function el(tag, className, attrs = {}) {
     const node = document.createElement(tag)
@@ -14,6 +15,7 @@ function el(tag, className, attrs = {}) {
     for (const [k, v] of Object.entries(attrs)) {
         if (v === null || v === undefined) continue
         if (k === 'text') node.textContent = v
+        else if (k === 'title') setTooltip(node, v)
         else node.setAttribute(k, v)
     }
     return node

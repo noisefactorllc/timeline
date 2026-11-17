@@ -7,6 +7,7 @@
 
 import { formatTimecode } from '../model/time.js'
 import { workRange } from '../model/project.js'
+import { setTooltip } from './tooltips.js'
 
 function el(tag, className, text) {
     const node = document.createElement(tag)
@@ -49,7 +50,7 @@ export class MonitorView {
         const tool = (iconName, label, onClick, className = '') => {
             const b = el('button', `tl-tool ${className}`)
             b.type = 'button'
-            b.title = label
+            setTooltip(b, label)
             b.setAttribute('aria-label', label)
             const i = el('span', 'hf-icon', iconName)
             i.setAttribute('aria-hidden', 'true')
@@ -80,7 +81,7 @@ export class MonitorView {
         this.scaleSelect = scale
         const full = el('button', 'tl-tool')
         full.type = 'button'
-        full.title = 'Full screen (F)'
+        setTooltip(full, 'Full screen (F)')
         full.setAttribute('aria-label', 'Full screen')
         full.append(el('span', 'hf-icon', 'fullscreen'))
         full.addEventListener('click', () => actions.toggleFullscreen())
@@ -123,7 +124,7 @@ export class MonitorView {
         this.meters.replaceChildren()
         this._meterRows = sources.map(src => {
             const group = el('div', 'tl-meter-group')
-            group.title = src.key === 'mix' ? 'audio(band: ...)' : `audio(band: ..., channel: ${src.key})`
+            setTooltip(group, src.key === 'mix' ? 'audio(band: ...)' : `audio(band: ..., channel: ${src.key})`)
             const bars = el('div', 'tl-meter-bars')
             const cells = ['low', 'mid', 'high'].map(band => {
                 const b = el('div', 'tl-meter-bar')
