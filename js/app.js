@@ -822,7 +822,23 @@ const actions = {
         store.setView({ previewScale: scale })
         resizePreview()
     },
+
+    /** Copy the prompt that teaches a person's agent the Timeline skill. */
+    async copySkillPrompt() {
+        try {
+            await navigator.clipboard.writeText(SKILL_PROMPT)
+            showToast('Prompt copied. Paste it into your agent to teach it the Timeline skill.', { type: 'success', duration: 3200 })
+        } catch {
+            showToast('Could not copy the prompt. Your browser blocked clipboard access.', { type: 'error', duration: 6000 })
+        }
+    },
 }
+
+/** The prompt that teaches an agent the Timeline skill: read the agent guide and follow it. */
+const SKILL_PROMPT = [
+    'Learn the Timeline skill so you can make videos with me in Timeline.',
+    'Read https://timeline.noisedeck.app/llms.txt first, and follow it.',
+].join('\n')
 
 // --- views -------------------------------------------------------------------
 
@@ -972,6 +988,8 @@ menu.config = {
             {
                 type: 'menu', id: 'helpMenu', trigger: { label: 'help' },
                 items: [
+                    { id: 'copySkillPrompt', label: 'Copy the Timeline skill prompt', onSelect: () => actions.copySkillPrompt() },
+                    { type: 'separator' },
                     { id: 'about', label: 'About Timeline', onSelect: () => about.show() },
                 ],
             },
