@@ -104,6 +104,15 @@ export class ProgramRenderer {
         return this.status === 'ready'
     }
 
+    /**
+     * True when the browser has taken this renderer's WebGL context away,
+     * as it does to its oldest context when a page opens too many.
+     */
+    get contextLost() {
+        if (!this.ready) return false
+        return this.canvas.getContext('webgl2')?.isContextLost() ?? false
+    }
+
     /** Upload input canvases into the program's media() steps, in order. */
     setInputs(sources) {
         for (let i = 0; i < this.mediaSteps.length; i++) {

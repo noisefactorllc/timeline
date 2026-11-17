@@ -91,3 +91,20 @@ test('programs requested earlier outrank programs that played long ago', async (
     assert.ok(pool.entries.has('upcoming'), 'the requested program was evicted before a program that played long ago')
     assert.ok(pool.entries.has('now'))
 })
+
+test('an exact frame gets a renderer past the capacity instead of losing a layer', async () => {
+    const pool = new RendererPool({ capacity: 3, width: 16, height: 9 })
+    const frameNumber = pool.beginFrame()
+    // Every renderer is reserved by the frame being prepared.
+    for (const key of ['a', 'b', 'c']) pool.acquire(key, `dsl ${key}`).reservedFrame = frameNumber
+    assert.equal(pool.acquire('post', 'dsl post'), null, 'the preview goes without a layer when every renderer is busy')
+    const post = pool.acquire('post', 'dsl post', { grow: true })
+    assert.ok(post, 'the exact frame got no renderer for its fourth layer')
+    assert.equal(pool.entries.size, 4)
+    await pool.settle(post)
+    assert.ok(pool.isReady(post))
+    // A later frame recycles instead of growing again.
+    pool.beginFrame()
+    assert.ok(pool.acquire('next', 'dsl next', { grow: true }))
+    assert.equal(pool.entries.size, 4)
+})

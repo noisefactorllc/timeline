@@ -95,3 +95,66 @@ test('export writes straight to a chosen file and says where it went', async ({ 
     expect(info.duration).toBeLessThan(0.7)
     expect(info.audio).toBe(true)
 })
+
+// Tracks that each dissolve on the cut at 4 s, red on top of blue, under a post chain
+// that inverts: a frame with every layer has a cyan centre. At 4 s each track needs three
+// renderers and the post chain one, so four tracks need more renderers than the pool keeps.
+function dissolvingTracks(count) {
+    const solid = color => `search synth\nsolid(color: ${color})\n  .write(o0)\nrender(o0)`
+    const tracks = Array.from({ length: count }, (_, i) => {
+        const color = i === count - 1 ? '#ff0000' : '#0000ff'
+        return {
+            clips: [
+                { id: `a${i}`, start: 0, duration: 4, dsl: solid(color) },
+                { id: `b${i}`, start: 4, duration: 4, dsl: solid(color) },
+            ],
+            transitions: [{ id: `x${i}`, from: `a${i}`, to: `b${i}`, duration: 1, preset: 'dissolve' }],
+        }
+    })
+    return {
+        name: `${count} tracks`,
+        sequences: { main: {
+            width: 320, height: 180, fps: 30, duration: 8, tracks,
+            post: { enabled: true, dsl: 'search synth, filter\nmedia()\n  .invert()\n  .write(o0)\nrender(o0)' },
+        } },
+    }
+}
+
+test('snapshot and export draw every layer of a frame that needs more renderers than the pool keeps', async ({ page }) => {
+    await boot(page, { demo: false })
+    for (const count of [3, 4]) {
+        const centres = await page.evaluate(async raw => {
+            const tl = window.__timeline
+            const { normalizeProject } = await import('/js/model/normalize.js')
+            const { project, problems } = normalizeProject(raw)
+            await tl.actions.openProject(project, { problems })
+            const centre = source => {
+                const c = new OffscreenCanvas(320, 180)
+                const g = c.getContext('2d')
+                g.drawImage(source, 0, 0, 320, 180)
+                const d = g.getImageData(150, 80, 20, 20).data
+                const sum = [0, 0, 0]
+                for (let i = 0; i < d.length; i += 4) for (let k = 0; k < 3; k++) sum[k] += d[i + k]
+                return sum.map(v => Math.round(v / (d.length / 4)))
+            }
+            const shot = await tl.snapshot({ times: [4] })
+            const still = centre(await createImageBitmap(new Blob([shot.frames[0].bytes], { type: 'image/png' })))
+            const { probeCodecs } = await import('/js/export/exporter.js')
+            const mp4 = await probeCodecs('mp4', 320, 180, 30)
+            const format = mp4.video ? 'mp4' : 'webm'
+            const result = await tl.exportSequence({ format, width: 320, height: 180, start: 3.5, end: 4.5, quality: 'medium', includeAudio: false })
+            const mb = await import('mediabunny')
+            const input = new mb.Input({ source: new mb.BlobSource(result.blob), formats: mb.ALL_FORMATS })
+            const sink = new mb.CanvasSink(await input.getPrimaryVideoTrack())
+            const exported = centre((await sink.getCanvas(0.5)).canvas)
+            return { still, exported, frames: result.frames }
+        }, dissolvingTracks(count))
+        expect(centres.frames).toBe(30)
+        for (const [path, [r, g, b]] of Object.entries({ snapshot: centres.still, export: centres.exported })) {
+            const where = `${count} tracks, ${path} at 4 s: ${r} ${g} ${b}`
+            expect(r, where).toBeLessThan(16)
+            expect(g, where).toBeGreaterThan(239)
+            expect(b, where).toBeGreaterThan(239)
+        }
+    }
+})

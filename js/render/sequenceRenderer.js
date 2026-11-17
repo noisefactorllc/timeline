@@ -109,12 +109,14 @@ export class SequenceRenderer {
 
     /**
      * Render a frame with every program compiled first: export uses this,
-     * so no frame is ever missing a layer.
+     * so no frame is ever missing a layer. The pool adds renderers past its
+     * capacity when the frame needs them, and the frame fails rather than
+     * draw without a layer whose WebGL context the browser took away.
      */
     async renderFrameExact(seq, t, { seek = false } = {}) {
-        await this.prepareFrame(seq, t)
+        await this.prepareFrame(seq, t, undefined, { exact: true })
         this.audio.feed(seq, t)
-        const ctx = { mode: 'render', seek, missing: 0, rootFps: seq.fps, exact: true }
+        const ctx = { mode: 'render', seek, missing: 0, rootFps: seq.fps, exact: true, time: t }
         const canvas = this._renderSeq(seq, t, 'root', 0, ctx)
         return { canvas, missing: ctx.missing }
     }
@@ -122,11 +124,12 @@ export class SequenceRenderer {
     /**
      * Compile everything the frame at `t` needs, reporting
      * onProgress(compiled, total) as each program settles. The frame's
-     * renderers stay reserved until the next frame begins.
+     * renderers stay reserved until the next frame begins. An exact frame
+     * gets a renderer for every layer, past the pool's capacity.
      */
-    async prepareFrame(seq, t, onProgress = () => {}) {
+    async prepareFrame(seq, t, onProgress = () => {}, { exact = false } = {}) {
         const frame = this.pool.beginFrame()
-        const collect = { mode: 'collect', entries: [], assets: [], frame, missing: 0 }
+        const collect = { mode: 'collect', entries: [], assets: [], frame, missing: 0, exact }
         this._renderSeq(seq, t, 'root', 0, collect)
         const total = collect.entries.length + collect.assets.length
         let compiled = 0
@@ -153,7 +156,7 @@ export class SequenceRenderer {
     }
 
     _entry(key, dsl, ctx, priority = 0) {
-        const entry = this.pool.acquire(key, dsl, { priority })
+        const entry = this.pool.acquire(key, dsl, { priority, grow: !!ctx.exact })
         if (!entry) {
             ctx.missing++
             return null
@@ -166,6 +169,9 @@ export class SequenceRenderer {
         if (!this.pool.isReady(entry)) {
             ctx.missing++
             return null
+        }
+        if (ctx.exact && entry.renderer.contextLost) {
+            throw new Error(`The frame at ${+ctx.time.toFixed(3)} s needs more WebGL renderers than the browser keeps open at once`)
         }
         return entry
     }

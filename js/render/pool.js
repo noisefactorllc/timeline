@@ -6,7 +6,8 @@
  * post chain borrows a renderer keyed by its instance; renderers that
  * were not used in the current frame are recycled for new keys, least
  * recently used first. Compiles run one at a time, the frame's own needs
- * before lookahead.
+ * before lookahead. The capacity bounds the preview; an exact frame
+ * (export and snapshot) adds renderers past it rather than lose a layer.
  */
 
 import { ProgramRenderer } from './programRenderer.js'
@@ -48,18 +49,22 @@ export class RendererPool {
 
     /**
      * The renderer entry for `key`, compiling `dsl` if it changed.
-     * Returns null when every renderer is busy this frame.
+     * Returns null when every renderer is busy this frame, unless `grow`
+     * asks for a new renderer past the capacity instead.
      */
-    acquire(key, dsl, { priority = 1 } = {}) {
+    acquire(key, dsl, { priority = 1, grow = false } = {}) {
         let entry = this.entries.get(key)
         if (!entry) {
             let renderer = null
             if (this.entries.size >= this.capacity) {
                 const victim = this._evictable()
-                if (!victim) return null
-                this.entries.delete(victim.key)
-                renderer = victim.renderer
-                renderer.resetState()
+                if (victim) {
+                    this.entries.delete(victim.key)
+                    renderer = victim.renderer
+                    renderer.resetState()
+                } else if (!grow) {
+                    return null
+                }
             }
             if (!renderer) {
                 renderer = new ProgramRenderer({ width: this.width, height: this.height, audioState: this.audioState })
