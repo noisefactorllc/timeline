@@ -39,4 +39,12 @@ jobs:
         run: |
           CHROME_PATH="$(node --input-type=module -e 'import { chromium } from "@playwright/test"; console.log(chromium.executablePath())')"
           export CHROME_PATH
+          sudo tee /etc/apparmor.d/timeline-test-chromium > /dev/null <<EOF
+          abi <abi/4.0>,
+          include <tunables/global>
+          profile timeline-test-chromium "$CHROME_PATH" flags=(unconfined) {
+            userns,
+          }
+          EOF
+          sudo apparmor_parser --replace /etc/apparmor.d/timeline-test-chromium
           npm run test:e2e
