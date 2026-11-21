@@ -35,9 +35,9 @@ export class ProgramRenderer {
     constructor({ width, height, audioState }) {
         this.width = width
         this.height = height
-        this.canvas = document.createElement('canvas')
-        this.canvas.width = width
-        this.canvas.height = height
+        this._canvasEl = document.createElement('canvas')
+        this._canvasEl.width = width
+        this._canvasEl.height = height
         this.dsl = null
         this.status = 'idle'
         this.error = null
@@ -53,6 +53,10 @@ export class ProgramRenderer {
             bundlePath: `${CDN_BASE}/effects`,
             preferWebGPU: false,
             onError: err => { this.lastRuntimeError = errorMessage(err) },
+            // After a lost WebGL context the engine presents on a fresh
+            // canvas, so `canvas` must follow it; the fresh pipeline also
+            // needs its media() inputs' sizes applied again.
+            onContextRestored: () => { this._sizes = []; this._lastPhase = null },
         })
         this._audioState = audioState
         this._ready = null
@@ -102,6 +106,16 @@ export class ProgramRenderer {
 
     get ready() {
         return this.status === 'ready'
+    }
+
+    /**
+     * The canvas the engine presents on. After a lost WebGL context the
+     * engine rebuilds on a fresh canvas in the old one's place, so hosts
+     * that composite, snapshot or export read this, never the element the
+     * renderer was built with.
+     */
+    get canvas() {
+        return this._renderer ? this._renderer.canvas : this._canvasEl
     }
 
     /**

@@ -105,8 +105,22 @@ function findChrome() {
 /** A minimal Chrome DevTools Protocol client over Node's built-in WebSocket. */
 class Cdp {
     static async launch() {
+        try {
+            return await Cdp.spawn([])
+        } catch (err) {
+            // On systems that forbid Chrome's own sandbox (Ubuntu 23.10 and
+            // later disable unprivileged user namespaces), Chrome exits at
+            // startup with "No usable sandbox". Chrome cannot start there
+            // any other way, so this headless session retries without it.
+            if (!/No usable sandbox/.test(err.message)) throw err
+            return await Cdp.spawn(['--no-sandbox'])
+        }
+    }
+
+    static async spawn(extraFlags) {
         const profile = mkdtempSync(join(tmpdir(), 'timeline-cli-'))
         const chrome = spawn(findChrome(), [
+            ...extraFlags,
             '--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`,
             '--no-first-run', '--no-default-browser-check', '--mute-audio', '--hide-scrollbars',
             '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required', '--window-size=1600,1000',
