@@ -3,8 +3,6 @@ import { boot } from './helpers.js'
 
 test('captions dropped with a narration clip selected land on a Captions track, timed to it', async ({ page }) => {
     const errors = await boot(page)
-    // The import's status toast lives 3.2 s, so it must be caught while the
-    // import runs, not after the evaluate returns.
     const placedPromise = page.evaluate(async () => {
         const tl = window.__timeline
         await tl.actions.newProject()
