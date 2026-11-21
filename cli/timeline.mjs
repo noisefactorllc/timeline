@@ -105,16 +105,14 @@ function findChrome() {
 /** A minimal Chrome DevTools Protocol client over Node's built-in WebSocket. */
 class Cdp {
     static async launch() {
-        try {
-            return await Cdp.spawn([])
-        } catch (err) {
-            // On systems that forbid Chrome's own sandbox (Ubuntu 23.10 and
-            // later disable unprivileged user namespaces), Chrome exits at
-            // startup with "No usable sandbox". Chrome cannot start there
-            // any other way, so this headless session retries without it.
-            if (!/No usable sandbox/.test(err.message)) throw err
-            return await Cdp.spawn(['--no-sandbox'])
-        }
+        // Chrome's sandbox needs unprivileged user namespaces. On systems
+        // that forbid them (Ubuntu 23.10 and later restrict them with
+        // AppArmor), Chrome exits at startup with "No usable sandbox" and
+        // its message names the fix. This session never launches without
+        // the sandbox: that would remove Chrome's process isolation while
+        // it handles page content. Give the Chrome binary a matching
+        // AppArmor profile with "userns," instead (the CI runner does).
+        return await Cdp.spawn([])
     }
 
     static async spawn(extraFlags) {
