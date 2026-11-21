@@ -49,20 +49,41 @@ test('playback renders live frames, and a ruler drag re-renders the frame at the
     const live = await frameHash(page)
     expect(live).not.toBe(paused)
 
-    // Scrubbing through the ruler: the drag pauses playback and moves the playhead.
-    const target = await page.evaluate(() => {
-        const seq = window.__timeline.store.seq
-        return Math.max(0.5, seq.duration * 0.15)
+    // Pause through the transport first, so the view stops scrolling while
+    // the drag coordinates are computed.
+    await play.click()
+    await expect.poll(() => page.evaluate(() => window.__timeline.store.playing)).toBe(false)
+
+    // Scrubbing through the ruler: the drag moves the playhead to the time
+    // the drag ends at. Snapping is off, so the requested time is the
+    // pointer position itself, not a nearby snap point; the store lands the
+    // playhead on the frame grid.
+    await page.evaluate(() => window.__timeline.store.setView({ snapping: false }))
+    const drag = await page.evaluate(() => {
+        const scroll = document.querySelector('.tl-scroll')
+        const store = window.__timeline.store
+        const pps = store.view.pxPerSecond
+        const seq = store.seq
+        const rect = scroll.getBoundingClientRect()
+        // A time a quarter of the visible ruler away from its left edge,
+        // clear of the playhead and not at the very end of the sequence.
+        const target = Math.min(seq.duration - 2, scroll.scrollLeft / pps + (rect.width * 0.25) / pps)
+        return {
+            clientX: rect.left + target * pps - scroll.scrollLeft,
+            expected: Math.floor((target + 24 / pps) * seq.fps + 1e-6) / seq.fps,
+        }
     })
     const ruler = page.locator('.tl-ruler')
     const box = await ruler.boundingBox()
-    const x = box.x + (target / (await page.evaluate(() => window.__timeline.store.seq.duration))) * box.width
-    await page.mouse.move(x, box.y + box.height / 2)
+    const y = box.y + box.height / 2
+    const tBeforeDrag = await page.evaluate(() => window.__timeline.store.playhead)
+    await page.mouse.move(drag.clientX, y)
     await page.mouse.down()
-    await page.mouse.move(x + 24, box.y + box.height / 2, { steps: 4 })
+    await page.mouse.move(drag.clientX + 24, y, { steps: 4 })
     await page.mouse.up()
     const t1 = await page.evaluate(() => window.__timeline.store.playhead)
-    expect(t1).not.toBe(t0)
+    expect(t1).toBeCloseTo(drag.expected, 2)
+    expect(t1).not.toBeCloseTo(tBeforeDrag, 2)
     await expect.poll(() => page.evaluate(() => window.__timeline.store.playing)).toBe(false)
 
     await settle(page)
