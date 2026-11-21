@@ -3,7 +3,9 @@ import { boot } from './helpers.js'
 
 test('captions dropped with a narration clip selected land on a Captions track, timed to it', async ({ page }) => {
     const errors = await boot(page)
-    const placed = await page.evaluate(async () => {
+    // The import's status toast lives 3.2 s, so it must be caught while the
+    // import runs, not after the evaluate returns.
+    const placedPromise = page.evaluate(async () => {
         const tl = window.__timeline
         await tl.actions.newProject()
         const { encodeWav } = await import('/js/audio/wav.js')
@@ -18,12 +20,15 @@ test('captions dropped with a narration clip selected land on a Captions track, 
         const track = tl.store.seq.tracks.find(t => t.name === 'Captions')
         return track.clips.map(c => [c.type, c.text, c.start, c.duration])
     })
-    expect(placed).toEqual([
+    const toastPromise = page
+        .getByText('2 captions from narration.vtt are on the Captions track, timed to narration')
+        .waitFor({ state: 'visible', timeout: 30_000 })
+    expect(await placedPromise).toEqual([
         ['text', 'Meet Timeline', 4, 1.5],
         ['text', 'Cut programs to music', 6, 1],
     ])
     await expect(page.locator('.tl-clip.is-text')).toHaveCount(2)
-    await expect(page.getByText('2 captions from narration.vtt are on the Captions track, timed to narration')).toBeVisible()
+    await toastPromise
     // One undo takes them all away.
     await page.evaluate(() => window.__timeline.store.undo())
     await expect(page.locator('.tl-clip.is-text')).toHaveCount(0)
