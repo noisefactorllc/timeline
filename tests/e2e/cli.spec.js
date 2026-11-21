@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { spawn } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,9 +8,11 @@ import { join } from 'node:path'
 const GOOD = 'search synth, filter\ncell(scale: 20)\n  .write(o0)\nrender(o0)'
 const BROKEN = 'search synth, filter\nclel(scale: 20)\n  .write(o0)\nrender(o0)'
 
-function run(args) {
+function run(args, preload) {
     return new Promise(resolve => {
-        const child = spawn(process.execPath, ['cli/timeline.mjs', ...args], { stdio: ['ignore', 'pipe', 'pipe'] })
+        const env = { ...process.env }
+        delete env.FORCE_COLOR
+        const child = spawn(process.execPath, [...(preload ? ['--import', preload] : []), 'cli/timeline.mjs', ...args], { env, stdio: ['ignore', 'pipe', 'pipe'] })
         let stdout = ''
         let stderr = ''
         child.stdout.on('data', d => { stdout += d })
@@ -112,16 +114,24 @@ test('the command line runs a project with a custom effect kept as files in its 
     }
 })
 
-test('the command line does not serve a symlink outside the project folder', async ({ baseURL }) => {
+test('the command line does not serve a canonical path outside the project folder', async ({ baseURL }) => {
     const dir = mkdtempSync(join(tmpdir(), 'timeline-cli-boundary-'))
     try {
         const project = join(dir, 'project')
         mkdirSync(join(project, 'media'), { recursive: true })
         copyFileSync('media/refinery-drums.flac', join(dir, 'outside.flac'))
-        symlinkSync(join(dir, 'outside.flac'), join(project, 'media', 'drums.flac'))
+        const preload = join(dir, 'canonical-path.mjs')
+        writeFileSync(preload, `
+            import fs from 'node:fs/promises'
+            import { syncBuiltinESMExports } from 'node:module'
+            const realpath = fs.realpath
+            fs.realpath = async path => path === ${JSON.stringify(join(project, 'media', 'drums.flac'))}
+                ? ${JSON.stringify(join(dir, 'outside.flac'))} : realpath(path)
+            syncBuiltinESMExports()
+        `)
         writeProject(project, GOOD)
 
-        const result = await run(['check', project, '--url', `${baseURL}/`, '--json'])
+        const result = await run(['check', project, '--url', `${baseURL}/`, '--json'], preload)
         expect(result.status, result.stderr).toBe(1)
         expect(JSON.parse(result.stdout).errors.some(error => error.where === 'media "drums"')).toBe(true)
     } finally {

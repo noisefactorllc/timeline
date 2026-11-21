@@ -10,8 +10,10 @@ export default defineConfig({
     timeout: 240_000,
     expect: { timeout: 60_000 },
     retries: 0,
-    reporter: [['list']],
+    reporter: [['list'], ['./tests/strict-reporter.js']],
+    forbidOnly: !!process.env.CI,
     use: {
+        headless: true,
         baseURL: `http://localhost:${PORT}`,
         viewport: { width: 1600, height: 1000 },
         launchOptions: {
