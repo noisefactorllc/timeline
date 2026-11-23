@@ -12,6 +12,13 @@
  *
  * Audio analysis is fed once per frame at the root sequence's time, so
  * every program, nested or not, and the post chain read the same values.
+ *
+ * Every program frame is awaited before its canvas is composited. A program
+ * with no scene() renders synchronously, so the await costs one microtask;
+ * a scene() program draws through an async path and needs the wait, or the
+ * composite would take the previous frame's canvas. Only one frame renders
+ * at a time: preview drops a frame while one is in flight, and an exact
+ * frame waits for the one in flight.
  */
 
 import { activeLayers, upcoming } from '../model/evaluate.js'
@@ -75,6 +82,7 @@ export class SequenceRenderer {
         this.composites = new Map()
         this.lastMissing = 0
         this.exporting = false
+        this._rendering = null
     }
 
     _composite(path) {
@@ -97,12 +105,22 @@ export class SequenceRenderer {
         return this._composite('__black').canvas
     }
 
-    /** Render a frame for preview. Programs still compiling are skipped. */
+    /**
+     * Render a frame for preview. Programs still compiling are skipped.
+     * Returns null, and draws nothing, while another preview frame is in
+     * flight; the caller marks the frame dirty and the next tick retries.
+     */
     renderFrame(seq, t, { seek = false } = {}) {
+        if (this._rendering) return Promise.resolve(null)
+        const run = this._preview(seq, t, seek)
+        return this._slot(run)
+    }
+
+    async _preview(seq, t, seek) {
         this.pool.beginFrame()
         this.audio.feed(seq, t)
         const ctx = { mode: 'render', seek, missing: 0, rootFps: seq.fps, exact: false }
-        const canvas = this._renderSeq(seq, t, 'root', 0, ctx)
+        const canvas = await this._renderSeq(seq, t, 'root', 0, ctx)
         this.lastMissing = ctx.missing
         return { canvas, missing: ctx.missing }
     }
@@ -112,13 +130,26 @@ export class SequenceRenderer {
      * so no frame is ever missing a layer. The pool adds renderers past its
      * capacity when the frame needs them, and the frame fails rather than
      * draw without a layer whose WebGL context the browser took away.
+     * Waits for a preview frame still in flight before it starts.
      */
     async renderFrameExact(seq, t, { seek = false } = {}) {
-        await this.prepareFrame(seq, t, undefined, { exact: true })
-        this.audio.feed(seq, t)
-        const ctx = { mode: 'render', seek, missing: 0, rootFps: seq.fps, exact: true, time: t }
-        const canvas = this._renderSeq(seq, t, 'root', 0, ctx)
-        return { canvas, missing: ctx.missing }
+        while (this._rendering) await this._rendering.catch(() => {})
+        const run = (async () => {
+            await this.prepareFrame(seq, t, undefined, { exact: true })
+            this.audio.feed(seq, t)
+            const ctx = { mode: 'render', seek, missing: 0, rootFps: seq.fps, exact: true, time: t }
+            const canvas = await this._renderSeq(seq, t, 'root', 0, ctx)
+            return { canvas, missing: ctx.missing }
+        })()
+        return this._slot(run)
+    }
+
+    /** Hold the one-frame-at-a-time slot while `run` renders. */
+    _slot(run) {
+        this._rendering = run
+        return run.finally(() => {
+            if (this._rendering === run) this._rendering = null
+        })
     }
 
     /**
@@ -130,7 +161,7 @@ export class SequenceRenderer {
     async prepareFrame(seq, t, onProgress = () => {}, { exact = false } = {}) {
         const frame = this.pool.beginFrame()
         const collect = { mode: 'collect', entries: [], assets: [], frame, missing: 0, exact }
-        this._renderSeq(seq, t, 'root', 0, collect)
+        await this._renderSeq(seq, t, 'root', 0, collect)
         const total = collect.entries.length + collect.assets.length
         let compiled = 0
         onProgress(0, total)
@@ -180,7 +211,7 @@ export class SequenceRenderer {
      * The canvas a clip contributes at its local time. `below()` gives the
      * composite of the layers beneath it, which a program's media() reads.
      */
-    _clipSource(clip, localTime, path, depth, ctx, seq, below) {
+    async _clipSource(clip, localTime, path, depth, ctx, seq, below) {
         if (isGraphic(clip)) {
             if (!this.graphics) return null
             if (ctx.mode === 'collect') {
@@ -207,7 +238,7 @@ export class SequenceRenderer {
         const activated = this.pool.touch(entry)
         if (activated) entry.renderer.resetState()
         if (entry.renderer.mediaSteps.length && below) entry.renderer.setInputs([below()])
-        entry.renderer.renderAt(loopPhase(localTime, clip.loop), { seek: ctx.seek || activated })
+        await entry.renderer.renderAt(loopPhase(localTime, clip.loop), { seek: ctx.seek || activated })
         return entry.renderer.canvas
     }
 
@@ -240,21 +271,21 @@ export class SequenceRenderer {
         return comp.canvas
     }
 
-    _renderSeq(seq, t, path, depth, ctx) {
+    async _renderSeq(seq, t, path, depth, ctx) {
         const layers = activeLayers(seq, t)
         const drawn = []
         // The layers so far, composited once per layer that asks for them.
         const belowFor = key => () => this._paint(this._composite(`${path}/${key}/below`), drawn)
         for (const layer of layers) {
             if (layer.kind === 'clip') {
-                const src = this._clipSource(layer.clip, layer.localTime, path, depth, ctx, seq, belowFor(layer.clip.id))
+                const src = await this._clipSource(layer.clip, layer.localTime, path, depth, ctx, seq, belowFor(layer.clip.id))
                 if (src) drawn.push(layerOf(layer.clip, layer.localTime, src))
                 continue
             }
             const { transition, progress, a, b } = layer
             if (!a || !b) {
                 const side = a || b
-                const src = this._clipSource(side.clip, side.localTime, path, depth, ctx, seq, belowFor(side.clip.id))
+                const src = await this._clipSource(side.clip, side.localTime, path, depth, ctx, seq, belowFor(side.clip.id))
                 const fade = a ? 1 - ease(progress) : ease(progress)
                 if (src) drawn.push(layerOf(side.clip, side.localTime, src, fade))
                 continue
@@ -263,14 +294,14 @@ export class SequenceRenderer {
             const blend = progress < 0.5 ? a.clip.blend : b.clip.blend
             if (isGraphic(a.clip) || isGraphic(b.clip)) {
                 // Graphics are see-through, so they cross-fade over the tracks beneath instead of mixing to an opaque frame.
-                const srcA = this._clipSource(a.clip, a.localTime, path, depth, ctx, seq, belowFor(a.clip.id))
-                const srcB = this._clipSource(b.clip, b.localTime, path, depth, ctx, seq, belowFor(b.clip.id))
+                const srcA = await this._clipSource(a.clip, a.localTime, path, depth, ctx, seq, belowFor(a.clip.id))
+                const srcB = await this._clipSource(b.clip, b.localTime, path, depth, ctx, seq, belowFor(b.clip.id))
                 if (srcA) drawn.push(layerOf(a.clip, a.localTime, srcA, 1 - ease(progress)))
                 if (srcB) drawn.push(layerOf(b.clip, b.localTime, srcB, ease(progress)))
                 continue
             }
-            const srcA = this._clipSource(a.clip, a.localTime, path, depth, ctx, seq, belowFor(a.clip.id)) || (ctx.mode === 'render' ? this._black() : null)
-            const srcB = this._clipSource(b.clip, b.localTime, path, depth, ctx, seq, belowFor(b.clip.id)) || (ctx.mode === 'render' ? this._black() : null)
+            const srcA = await this._clipSource(a.clip, a.localTime, path, depth, ctx, seq, belowFor(a.clip.id)) || (ctx.mode === 'render' ? this._black() : null)
+            const srcB = await this._clipSource(b.clip, b.localTime, path, depth, ctx, seq, belowFor(b.clip.id)) || (ctx.mode === 'render' ? this._black() : null)
             const entry = this._entry(`${path}/${transition.id}`, transitionDsl(transition), ctx)
             if (!entry) {
                 // Fall back to a plain dissolve while the transition compiles.
@@ -280,7 +311,7 @@ export class SequenceRenderer {
             }
             this.pool.touch(entry)
             entry.renderer.setInputs([srcA, srcB])
-            entry.renderer.renderAt(Math.min(progress, 0.99999), { seek: true })
+            await entry.renderer.renderAt(Math.min(progress, 0.99999), { seek: true })
             drawn.push({ canvas: entry.renderer.canvas, opacity, blend })
         }
 
@@ -297,7 +328,7 @@ export class SequenceRenderer {
             if (entry) {
                 const activated = this.pool.touch(entry)
                 entry.renderer.setInputs([comp.canvas])
-                entry.renderer.renderAt(loopPhase(t, seq.post.loop || 8), { seek: ctx.seek || activated })
+                await entry.renderer.renderAt(loopPhase(t, seq.post.loop || 8), { seek: ctx.seek || activated })
                 return entry.renderer.canvas
             }
         }

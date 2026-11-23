@@ -1305,10 +1305,19 @@ function frame(now) {
     if (f !== lastFrame || dirty) {
         const seek = !store.playing || f !== lastFrame + 1
         dirty = false
-        const result = renderer.renderFrame(seq, f / seq.fps, { seek })
-        monitor.draw(result.canvas)
-        lastFrame = f
-        monitor.setCompiling(result.missing > 0)
+        // The frame is awaited: a scene() program spans awaits inside the
+        // engine's render, and the monitor must show its canvas only once
+        // the frame is there. A frame dropped because one is still in
+        // flight marks itself dirty for the next tick.
+        renderer.renderFrame(seq, f / seq.fps, { seek }).then(result => {
+            if (!result) {
+                dirty = true
+                return
+            }
+            monitor.draw(result.canvas)
+            lastFrame = f
+            monitor.setCompiling(result.missing > 0)
+        })
     }
     monitor.updateMeters(audio.state)
     if (now - lastPrefetch > 300) {

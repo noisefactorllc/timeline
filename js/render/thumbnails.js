@@ -128,7 +128,10 @@ export class Thumbnails {
                     this.renderer.resetState()
                     for (let i = SETTLE_FRAMES; i >= 0; i--) {
                         const p = item.phase - i / 240
-                        this.renderer.renderAt(p - Math.floor(p), { seek: i === SETTLE_FRAMES })
+                        // Awaited: a scene() program spans awaits inside the
+                        // engine's render, and the capture must read the
+                        // settled frame, not the one before it.
+                        await this.renderer.renderAt(p - Math.floor(p), { seek: i === SETTLE_FRAMES })
                     }
                     let bitmap = null
                     try {

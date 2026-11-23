@@ -151,13 +151,21 @@ export class ProgramRenderer {
     /**
      * Render at an engine phase (0..1). `seek` zeroes the time step so a
      * jump is not integrated by simulations.
+     *
+     * Returns the engine's render promise, and null when there is nothing
+     * compiled to render. A program with no scene() has no await inside its
+     * render, so the frame is already on the canvas when the promise returns.
+     * A scene() program draws through an async path — shader compiles and GPU
+     * backpressure land between the call and the frame — so hosts must await
+     * the promise before they composite, snapshot or export the canvas. The
+     * engine made render() async for scenes in release 1.5.
      */
     renderAt(phase, { seek = false } = {}) {
-        if (this.status !== 'ready' && !this.dsl) return false
+        if (this.status !== 'ready' && !this.dsl) return null
         if (seek || this._lastPhase === null) this._renderer.syncTime(phase)
-        this._renderer.render(phase)
+        const done = this._renderer.render(phase)
         this._lastPhase = phase
-        return true
+        return done
     }
 
     /** Clear simulation and feedback state so the program starts fresh. */

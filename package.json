@@ -11,7 +11,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "node scripts/dev-server.mjs 3027",
-    "test": "node --test --test-reporter=./scripts/test-reporter.mjs 'tests/unit/**/*.test.js'",
+    "test": "node scripts/unit-tests.mjs",
     "test:e2e": "node node_modules/@playwright/test/cli.js test",
     "lint": "find js cli \\( -name '*.js' -o -name '*.mjs' \\) -print0 | xargs -0 -n1 node --check",
     "vendor": "node scripts/vendor.mjs",
