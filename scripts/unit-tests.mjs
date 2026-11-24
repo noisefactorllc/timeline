@@ -23,7 +23,6 @@ const MAP = [
 const changed = (process.env.NM_CHANGED_FILES || '').split('\n').map(s => s.trim()).filter(Boolean)
 const selected = new Set()
 for (const path of changed) {
-    // A changed unit test exercises itself.
     if (/^tests\/unit\/.+\.test\.js$/.test(path)) selected.add(path)
     for (const [source, testFile] of MAP) {
         if (path === source || path.startsWith(`${source}/`)) selected.add(testFile)

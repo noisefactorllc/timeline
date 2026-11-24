@@ -51,15 +51,6 @@ const COMPOSITE_OPS = {
 
 const ease = x => (1 - Math.cos(Math.PI * Math.max(0, Math.min(1, x)))) / 2
 
-/**
- * Present the frame a preview render returned a promise for.
- *
- * A scene() program spans awaits inside the engine's render, so the monitor
- * draws only once the promise has settled; a frame dropped because another
- * preview frame is still in flight marks itself dirty for the next tick.
- * @param {Promise<{canvas: HTMLCanvasElement, missing: number}|null>} request
- * @param {{draw: Function, onDrawn: Function, setCompiling: Function, onDropped: Function}} hooks
- */
 export function presentPreviewFrame(request, { draw, onDrawn, setCompiling, onDropped }) {
     return request.then(result => {
         if (!result) {
