@@ -38,7 +38,11 @@ export class CanvasRenderer {
 
     async loadEffects() {}
 
+    /** A test sets this to make the next compile throw an engine error shape. */
+    compileError = null
+
     async compile() {
+        if (this.compileError) throw this.compileError
         this.pipeline = {
             surfaces: new Map(),
             async whenAsyncInitsSettled() {},

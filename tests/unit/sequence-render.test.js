@@ -85,6 +85,24 @@ test('renderAt returns the engine render promise, present only after it settles'
     assert.equal(engine.canvas.present, true, 'awaiting the promise lands on the rendered frame')
 })
 
+test('a compile failure in the engine error-object shape surfaces its messages', async () => {
+    const pr = new ProgramRenderer({ width: 64, height: 36 })
+    const engine = created[created.length - 1]
+    // Engine 1.5 throws a scene volume() atlas mismatch as an error object
+    // whose problems live under `errors`, not `diagnostics`.
+    engine.compileError = {
+        code: 'ERR_VOLUME_ATLAS_SIZE',
+        errors: [{ message: 'volume() on surface o3 needs volumeSize 64', surface: 'o3', volumeSize: 64 }],
+    }
+    const loaded = await pr.load('scene(scene(mesh())).volume().out(o0)')
+    assert.equal(loaded.success, false)
+    assert.match(pr.error, /volume\(\) on surface o3 needs volumeSize 64/, 'the engine message shows')
+    assert.doesNotMatch(pr.error, /^\{/, 'no raw JSON object reaches the user')
+
+    engine.compileError = null
+    assert.equal((await pr.load('osc().out(o0)')).success, true, 'a later compile without the failure recovers')
+})
+
 test('an exact frame composites a program canvas only after its render settles', async () => {
     draws.length = 0
     const pool = new RendererPool({ capacity: 4, width: 320, height: 180 })
