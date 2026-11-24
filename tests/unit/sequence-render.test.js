@@ -88,8 +88,6 @@ test('renderAt returns the engine render promise, present only after it settles'
 test('a compile failure in the engine error-object shape surfaces its messages', async () => {
     const pr = new ProgramRenderer({ width: 64, height: 36 })
     const engine = created[created.length - 1]
-    // Engine 1.5 throws a scene volume() atlas mismatch as an error object
-    // whose problems live under `errors`, not `diagnostics`.
     engine.compileError = {
         code: 'ERR_VOLUME_ATLAS_SIZE',
         errors: [{ message: 'volume() on surface o3 needs volumeSize 64', surface: 'o3', volumeSize: 64 }],

@@ -26,9 +26,6 @@ function errorMessage(err) {
     if (Array.isArray(err.diagnostics) && err.diagnostics.length) {
         return err.diagnostics.map(d => d.message || String(d)).join('\n')
     }
-    // A scene volume() reading a chain written at the wrong atlas size throws
-    // { code: 'ERR_VOLUME_ATLAS_SIZE', errors: [...] } (engine 1.5): the same
-    // per-problem records as diagnostics, under a different key.
     if (Array.isArray(err.errors) && err.errors.length) {
         return err.errors.map(d => d.message || String(d)).join('\n')
     }

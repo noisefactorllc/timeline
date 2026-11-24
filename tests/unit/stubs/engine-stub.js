@@ -38,7 +38,6 @@ export class CanvasRenderer {
 
     async loadEffects() {}
 
-    /** A test sets this to make the next compile throw an engine error shape. */
     compileError = null
 
     async compile() {
