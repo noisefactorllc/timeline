@@ -30,6 +30,18 @@ async function settle(page) {
     await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))))
 }
 
+/**
+ * Drive the transport button until the store reports `wanted`. A click can be
+ * lost while playback saturates the main thread or the button is mid-rebuild,
+ * so the click retries until the store agrees.
+ */
+async function toggleUntil(page, play, wanted) {
+    await expect.poll(async () => {
+        if ((await page.evaluate(() => window.__timeline.store.playing)) !== wanted) await play.click()
+        return page.evaluate(() => window.__timeline.store.playing)
+    }).toBe(wanted)
+}
+
 test('playback renders live frames, and a ruler drag re-renders the frame at the new playhead', async ({ page }) => {
     await boot(page)
     const play = page.locator('.tl-monitor .tl-transport [aria-label="Play or pause (Space)"]')
@@ -37,8 +49,7 @@ test('playback renders live frames, and a ruler drag re-renders the frame at the
     const paused = await frameHash(page)
 
     // Playback: the playhead advances while the frame keeps rendering.
-    await play.click()
-    await expect.poll(() => page.evaluate(() => window.__timeline.store.playing)).toBe(true)
+    await toggleUntil(page, play, true)
     await page.waitForFunction(
         t0 => window.__timeline.store.playhead > t0 + 0.5,
         t0,
@@ -51,8 +62,7 @@ test('playback renders live frames, and a ruler drag re-renders the frame at the
 
     // Pause through the transport first, so the view stops scrolling while
     // the drag coordinates are computed.
-    await play.click()
-    await expect.poll(() => page.evaluate(() => window.__timeline.store.playing)).toBe(false)
+    await toggleUntil(page, play, false)
 
     // Scrubbing through the ruler: the drag moves the playhead to the time
     // the drag ends at. Snapping is off, so the requested time is the
