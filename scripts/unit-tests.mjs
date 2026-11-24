@@ -12,15 +12,19 @@ const ALL = ['tests/unit/**/*.test.js']
 
 /** Changed source path -> the unit tests that exercise it. */
 const MAP = [
+    ['js/app.js', 'tests/unit/sequence-render.test.js'],
     ['js/render/pool.js', 'tests/unit/pool.test.js'],
     ['js/render/programRenderer.js', 'tests/unit/sequence-render.test.js'],
+    ['js/render/programRenderer.js', 'tests/unit/thumbnails.test.js'],
     ['js/render/sequenceRenderer.js', 'tests/unit/sequence-render.test.js'],
-    ['js/render/thumbnails.js', 'tests/unit/sequence-render.test.js'],
+    ['js/render/thumbnails.js', 'tests/unit/thumbnails.test.js'],
 ]
 
 const changed = (process.env.NM_CHANGED_FILES || '').split('\n').map(s => s.trim()).filter(Boolean)
 const selected = new Set()
 for (const path of changed) {
+    // A changed unit test exercises itself.
+    if (/^tests\/unit\/.+\.test\.js$/.test(path)) selected.add(path)
     for (const [source, testFile] of MAP) {
         if (path === source || path.startsWith(`${source}/`)) selected.add(testFile)
     }

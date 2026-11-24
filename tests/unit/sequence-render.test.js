@@ -49,7 +49,7 @@ globalThis.document = {
 }
 
 const { ProgramRenderer } = await import('../../js/render/programRenderer.js')
-const { SequenceRenderer } = await import('../../js/render/sequenceRenderer.js')
+const { SequenceRenderer, presentPreviewFrame } = await import('../../js/render/sequenceRenderer.js')
 const { RendererPool } = await import('../../js/render/pool.js')
 const { created } = await import('./stubs/engine-stub.js')
 
@@ -108,6 +108,39 @@ test('an exact frame composites a program canvas only after its render settles',
     for (const d of programDraws) {
         assert.equal(d.settled, true, 'every composite read of a program canvas saw the settled frame')
     }
+})
+
+test('the preview tick draws a settled scene frame and marks a dropped frame dirty', async () => {
+    // The request settles after the frame becomes presentable, the way an
+    // engine render of a scene() program does.
+    let present = null
+    const canvas = { present: false }
+    const request = new Promise(resolve => {
+        present = () => {
+            canvas.present = true
+            resolve({ canvas, missing: 0 })
+        }
+    })
+    const calls = []
+    const presented = presentPreviewFrame(request, {
+        draw: c => calls.push(['draw', c.present]),
+        onDrawn: () => calls.push(['drawn']),
+        setCompiling: compiling => calls.push(['compiling', compiling]),
+        onDropped: () => calls.push(['dropped']),
+    })
+    assert.equal(calls.length, 0, 'nothing draws before the render settles')
+    present()
+    await presented
+    assert.deepEqual(calls, [['draw', true], ['drawn'], ['compiling', false]])
+
+    const droppedCalls = []
+    await presentPreviewFrame(Promise.resolve(null), {
+        draw: () => droppedCalls.push('draw'),
+        onDrawn: () => droppedCalls.push('drawn'),
+        setCompiling: () => droppedCalls.push('compiling'),
+        onDropped: () => droppedCalls.push('dropped'),
+    })
+    assert.deepEqual(droppedCalls, ['dropped'], 'a dropped frame redraws on the next tick and draws nothing')
 })
 
 test('preview drops a frame while another preview frame is in flight', async () => {

@@ -45,7 +45,7 @@ const MODULES = [
 let modulesLoaded = 0
 const [
     { Store }, { AudioEngine }, { importMediaFile, getAudioBuffer, setMediaSource }, { RendererPool },
-    { SequenceRenderer }, { Thumbnails }, { TimelineView }, { MonitorView }, { InspectorView }, { LibraryView },
+    { SequenceRenderer, presentPreviewFrame }, { Thumbnails }, { TimelineView }, { MonitorView }, { InspectorView }, { LibraryView },
     { ExportDialog }, { askText, askConfirm }, { createDemoProject }, { transitionPreset, postPreset, DEFAULT_TRANSITION },
     model, edits, { frameAt, beatSeconds, barSeconds, clamp },
     { loadProject, listProjects, readPrefs, writePrefs, saveProject, saveFolderHandle, loadFolderHandle },
@@ -1305,18 +1305,11 @@ function frame(now) {
     if (f !== lastFrame || dirty) {
         const seek = !store.playing || f !== lastFrame + 1
         dirty = false
-        // The frame is awaited: a scene() program spans awaits inside the
-        // engine's render, and the monitor must show its canvas only once
-        // the frame is there. A frame dropped because one is still in
-        // flight marks itself dirty for the next tick.
-        renderer.renderFrame(seq, f / seq.fps, { seek }).then(result => {
-            if (!result) {
-                dirty = true
-                return
-            }
-            monitor.draw(result.canvas)
-            lastFrame = f
-            monitor.setCompiling(result.missing > 0)
+        presentPreviewFrame(renderer.renderFrame(seq, f / seq.fps, { seek }), {
+            draw: canvas => monitor.draw(canvas),
+            onDrawn: () => { lastFrame = f },
+            setCompiling: compiling => monitor.setCompiling(compiling),
+            onDropped: () => { dirty = true },
         })
     }
     monitor.updateMeters(audio.state)
