@@ -1,7 +1,35 @@
 import { test, expect } from '@playwright/test'
-import { boot } from './helpers.js'
+import { boot, settleAt } from './helpers.js'
 
 const BAR = 60 / 128 * 4
+
+const BLOOM = [
+    'search synth, filter',
+    'noise(speed: 0, octaves: 3, ridges: true, colorMode: rgb)',
+    '  .bloom(intensity: audio(band: audioBand.low, min: 0, max: 0.6))',
+    '  .write(o0)',
+    'render(o0)',
+].join('\n')
+
+function readMonitor(page) {
+    return page.evaluate(() => {
+        const src = document.querySelector('.tl-monitor-canvas')
+        const c = document.createElement('canvas')
+        c.width = 64
+        c.height = 36
+        const g = c.getContext('2d')
+        g.drawImage(src, 0, 0, 64, 36)
+        return [...g.getImageData(0, 0, 64, 36).data]
+    })
+}
+
+function meanAbsDiff(a, b) {
+    let sum = 0
+    for (let i = 0; i < a.length; i += 4) {
+        sum += Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2])
+    }
+    return sum / (a.length / 4)
+}
 
 test('audio() reads each audio track by channel, and the mix without one', async ({ page }) => {
     await boot(page)
@@ -24,6 +52,46 @@ test('audio() reads each audio track by channel, and the mix without one', async
     expect(values.kick.drums).toBeGreaterThan(0.3)
     expect(values.kick.named).toBe(values.kick.drums)
     expect(values.kick.mix).toBeGreaterThan(0)
+})
+
+test('a program that calls audio() renders the music into its output', async ({ page }) => {
+    await boot(page)
+    await page.locator('.tl-clip', { hasText: 'Infrastructure' }).click({ position: { x: 140, y: 40 }, timeout: 120_000 })
+    await page.evaluate(value => {
+        const editor = document.querySelector('#inspector code-editor')
+        editor.value = value
+        editor.dispatchEvent(new CustomEvent('input', { detail: { value } }))
+    }, BLOOM)
+    await expect(page.locator('.tl-editor-status')).toHaveText('Running', { timeout: 180_000 })
+    await page.evaluate(async () => {
+        const tl = window.__timeline
+        await tl.audio.mix(tl.store.project, tl.store.seq)
+    })
+
+    const t = BAR * 8 + 0.5
+    await page.evaluate(t => {
+        const tl = window.__timeline
+        tl.audio.feed(tl.store.seq, t)
+        tl.actions.seek(t)
+    }, t)
+    await settleAt(page, t)
+    const withMusic = await readMonitor(page)
+
+    await page.evaluate(t => {
+        const tl = window.__timeline
+        tl.audio.feed(tl.store.seq, t)
+        const s = tl.audio.state
+        for (const band of ['low', 'mid', 'high']) {
+            s[band] = 0
+            s.getDefaultChannelState(1)[band] = 0
+            s.getDefaultChannelState(2)[band] = 0
+        }
+        tl.actions.seek(t + 1 / 30)
+    }, t)
+    await settleAt(page, t + 1 / 30)
+    const silenced = await readMonitor(page)
+
+    expect(meanAbsDiff(withMusic, silenced)).toBeGreaterThan(10)
 })
 
 test('analysis is the same however the playhead got there', async ({ page }) => {
