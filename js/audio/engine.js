@@ -223,7 +223,7 @@ export class AudioEngine {
     stop() {
         if (this.source) {
             try { this.source.stop() } catch { /* already stopped */ }
-            this.source.disconnect()
+            try { this.source.disconnect() } catch { /* the context is gone */ }
             this.source = null
         }
         this.playing = false

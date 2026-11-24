@@ -41,6 +41,7 @@ const MODULES = [
     './ui/exportDialog.js', './ui/dialogs.js', './data/demoProject.js', './data/presets.js', './model/project.js',
     './model/edit.js', './model/time.js', './storage/db.js', './storage/projectFile.js', './export/exporter.js',
     './storage/folder.js', './render/graphics.js', './model/normalize.js', './model/captions.js', './render/effects.js',
+    './audio/startToken.js',
 ]
 let modulesLoaded = 0
 const [
@@ -52,6 +53,7 @@ const [
     { projectToFile, projectFromFile, PROJECT_EXTENSION }, { exportSequence }, { FolderSource, UrlSource },
     { GraphicsRenderer }, { mediaKindOf }, { parseCaptions, captionClips, isCaptionFile },
     { registerProjectEffects, readEffectZip, zipHoldsEffect, inlineEffects },
+    { StartGate },
 ] = await Promise.all(MODULES.map(path => import(path).then(module => {
     modulesLoaded++
     boot.progress('editor', modulesLoaded / MODULES.length, `${modulesLoaded} of ${MODULES.length} modules`)
@@ -76,6 +78,8 @@ let rememberedFolder = false
 // --- actions ---------------------------------------------------------------
 
 const actions = {
+    startGate: new StartGate(),
+
     status(message) {
         showToast(message, { type: 'info', duration: 3200 })
     },
@@ -148,17 +152,20 @@ const actions = {
     },
 
     async _start() {
+        const token = actions.startGate.begin()
         await audio.unlock()
         const seq = store.seq
         const range = store.loopPlayback ? model.workRange(seq) : { start: 0, end: seq.duration }
         if (store.playhead >= range.end - 1 / seq.fps || store.playhead < range.start && store.loopPlayback) store.setPlayhead(range.start)
         await audio.mix(store.project, seq)
+        if (!actions.startGate.current(token)) return
         audio.play(seq, store.playhead)
         store.setPlaying(true)
         thumbs.paused = true
     },
 
     pause() {
+        actions.startGate.invalidate()
         if (!store.playing) return
         audio.stop()
         store.setPlaying(false)

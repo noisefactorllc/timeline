@@ -18,6 +18,8 @@ const MAP = [
     ['js/render/programRenderer.js', 'tests/unit/thumbnails.test.js'],
     ['js/render/sequenceRenderer.js', 'tests/unit/sequence-render.test.js'],
     ['js/render/thumbnails.js', 'tests/unit/thumbnails.test.js'],
+    ['js/audio/engine.js', 'tests/unit/engine-stop.test.js'],
+    ['js/audio/startToken.js', 'tests/unit/start-token.test.js'],
 ]
 
 const changed = (process.env.NM_CHANGED_FILES || '').split('\n').map(s => s.trim()).filter(Boolean)
