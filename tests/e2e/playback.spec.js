@@ -30,11 +30,6 @@ async function settle(page) {
     await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))))
 }
 
-/**
- * Drive the transport button until the store reports `wanted`. A click can be
- * lost while playback saturates the main thread or the button is mid-rebuild,
- * so the click retries until the store agrees.
- */
 async function toggleUntil(page, play, wanted) {
     await expect.poll(async () => {
         if ((await page.evaluate(() => window.__timeline.store.playing)) !== wanted) await play.click()
