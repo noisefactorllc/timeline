@@ -56,3 +56,22 @@ test('playback keeps rendering across the post chain loop seam', async ({ page }
     expect(stillMoving).not.toBe(afterSeam)
     expect(errors).toEqual([])
 })
+
+test('a wrapped phase steps by the wrapped delta through the app renderer', async ({ page }) => {
+    await boot(page)
+    const delta = await page.evaluate(async () => {
+        const tl = window.__timeline
+        const entry = [...tl.pool.entries.values()].find(e => e.renderer.ready && e.renderer._renderer?.pipeline)
+        if (!entry) throw new Error('no ready renderer with a pipeline')
+        const r = entry.renderer
+        // Drive the app's own render entry across the wrap without a seek,
+        // then read the delta the engine integrated for that step.
+        await r.renderAt(0.99, { seek: true })
+        await r.renderAt(0.01)
+        return r._renderer.pipeline.globalUniforms.deltaTime
+    })
+    // The step across the wrap is the distance from 0.99 to 1.01, one full
+    // frame of the loop: not a small fudge step, not a negative one.
+    expect(delta).toBeGreaterThan(0.015)
+    expect(delta).toBeLessThan(0.025)
+})
