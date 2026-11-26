@@ -2,11 +2,15 @@
  * End-to-end test entrypoint (`npm test:e2e`).
  *
  * With NM_CHANGED_FILES set, one changed path per line, it runs only the
- * end-to-end specs that exercise those paths, per the focused-test rule;
- * with it unset, or when no spec maps to a changed path, it runs the whole
- * suite. With NM_SHARD_INDEX and NM_SHARD_COUNT set, it runs only this
- * shard's slice of the selected specs (a .nm-test-shards file at the
- * repository root declares the count).
+ * end-to-end specs that exercise those paths, per the focused-test rule: a
+ * changed spec runs itself, a changed source path runs its mapped specs, and
+ * an unmapped source path maps to no spec (the same convention as
+ * scripts/unit-tests.mjs). With NM_CHANGED_FILES unset, or when no spec maps
+ * to any changed path, it runs the whole suite. With NM_SHARD_INDEX and
+ * NM_SHARD_COUNT set, it runs only this shard's slice of the selected specs
+ * (a .nm-test-shards file at the repository root declares the count; without
+ * that file the run stays unsharded, and a count that disagrees with the file
+ * is an error).
  */
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -53,6 +57,8 @@ if (shardCount >= 2 && shardCount <= 8 && shardIndex !== undefined && shardFileC
         console.log('This shard runs no tests: every selected spec landed in the other shards.')
         process.exit(0)
     }
+} else if (shardCount >= 2 && shardCount <= 8 && shardIndex !== undefined && shardFileCount !== null) {
+    throw new Error(`NM_SHARD_COUNT ${shardCount} does not match .nm-test-shards (${shardFileCount})`)
 }
 
 const result = spawnSync('node', [CLI, 'test', ...files, ...process.argv.slice(2)], { stdio: 'inherit' })
