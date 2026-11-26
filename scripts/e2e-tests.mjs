@@ -4,9 +4,10 @@
  * With NM_CHANGED_FILES set, one changed path per line, it runs only the
  * end-to-end specs that exercise those paths, per the focused-test rule: a
  * changed spec runs itself, a changed source path runs its mapped specs, and
- * an unmapped source path maps to no spec (the same convention as
- * scripts/unit-tests.mjs). With NM_CHANGED_FILES unset, or when no spec maps
- * to any changed path, it runs the whole suite. With NM_SHARD_INDEX and
+ * a changed path that no spec maps to makes the whole suite run, so the
+ * selection never covers only part of the changed behavior. With
+ * NM_CHANGED_FILES unset, or when no spec maps to any changed path, it runs
+ * the whole suite. With NM_SHARD_INDEX and
  * NM_SHARD_COUNT set, it runs only this shard's slice of the selected specs
  * (a .nm-test-shards file at the repository root declares the count; without
  * that file the run stays unsharded, and a count that disagrees with the file
@@ -28,16 +29,26 @@ const MAP = [
 
 const changed = (process.env.NM_CHANGED_FILES || '').split('\n').map(s => s.trim()).filter(Boolean)
 const selected = new Set()
+let everyPathMapped = true
 for (const path of changed) {
-    if (/^tests\/e2e\/.+\.spec\.js$/.test(path)) selected.add(path)
+    let mapped = /^tests\/e2e\/.+\.spec\.js$/.test(path)
+    if (mapped) selected.add(path)
     for (const [source, testFiles] of MAP) {
-        if (path === source || path.startsWith(`${source}/`)) for (const f of testFiles) selected.add(f)
+        if (path === source || path.startsWith(`${source}/`)) {
+            mapped = true
+            for (const f of testFiles) selected.add(f)
+        }
     }
+    if (!mapped) everyPathMapped = false
 }
+// A changed path that no spec exercises leaves that behavior untested, so the
+// whole suite must run rather than a selection that covers only part of it.
 let files = ALL
 const extraArgs = process.argv.slice(2)
-if (changed.length && selected.size) files = [...selected].sort()
-else if (!changed.length && extraArgs.length) files = [] // the caller's own file filters select
+if (!everyPathMapped) {
+    selected.clear()
+} else if (selected.size) files = [...selected].sort()
+else if (extraArgs.length) files = [] // the caller's own file filters select
 
 
 const shardCount = Number(process.env.NM_SHARD_COUNT || '')
