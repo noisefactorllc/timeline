@@ -18,6 +18,8 @@ const ALL = ['tests/e2e']
 const MAP = [
     // Shared boot helpers: every spec exercises them, so run the whole suite.
     ['tests/e2e/helpers.js', ALL],
+    // The entrypoint itself: one short spec proves it still selects and runs.
+    ['scripts/e2e-tests.mjs', ['tests/e2e/help.spec.js']],
 ]
 
 const changed = (process.env.NM_CHANGED_FILES || '').split('\n').map(s => s.trim()).filter(Boolean)
@@ -39,16 +41,18 @@ const shardIndex = process.env.NM_SHARD_INDEX
 let shardFileCount = null
 try {
     shardFileCount = Number(readFileSync('.nm-test-shards', 'utf8').trim())
-} catch { /* no shard file: the shard variables stay dormant */ }
-if (shardCount >= 2 && shardCount <= 8 && shardIndex !== undefined) {
-    if (shardFileCount !== null && shardFileCount !== shardCount) {
-        throw new Error(`NM_SHARD_COUNT ${shardCount} does not match .nm-test-shards (${shardFileCount})`)
-    }
+} catch { /* no shard file: nothing may be omitted, so the run stays unsharded */ }
+if (shardCount >= 2 && shardCount <= 8 && shardIndex !== undefined && shardFileCount === shardCount) {
     const index = Number(shardIndex)
     if (!Number.isInteger(index) || index < 0 || index >= shardCount) {
         throw new Error(`NM_SHARD_INDEX ${shardIndex} is outside the 0..${shardCount - 1} range`)
     }
+    const unsharded = [...files]
     files = files.filter((_, i) => i % shardCount === index)
+    if (!files.length && unsharded.length) {
+        console.log('This shard runs no tests: every selected spec landed in the other shards.')
+        process.exit(0)
+    }
 }
 
 const result = spawnSync('node', [CLI, 'test', ...files, ...process.argv.slice(2)], { stdio: 'inherit' })
