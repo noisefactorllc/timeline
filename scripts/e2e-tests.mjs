@@ -23,8 +23,8 @@ const ALL = ['tests/e2e']
 const MAP = [
     // Shared boot helpers: every spec exercises them, so run the whole suite.
     ['tests/e2e/helpers.js', ALL],
-    // The entrypoint itself: one short spec proves it still selects and runs.
-    ['scripts/e2e-tests.mjs', ['tests/e2e/help.spec.js']],
+    // The entrypoint itself: a fast selector spec proves it still selects.
+    ['scripts/e2e-tests.mjs', ['tests/e2e/entrypoint.spec.js']],
 ]
 
 const changed = (process.env.NM_CHANGED_FILES || '').split('\n').map(s => s.trim()).filter(Boolean)
