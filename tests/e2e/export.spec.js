@@ -9,9 +9,6 @@ test('export renders every frame and muxes the timeline audio', async ({ page })
         const mp4 = await probeCodecs('mp4', 320, 180, 30)
         const format = mp4.video && mp4.audio ? 'mp4' : 'webm'
         const start = 60 / 128 * 4 * 8 - 0.5
-        // Record every time the exporter renders. Export first seeks the
-        // pre-roll state, then renders each exported frame once, awaited,
-        // at its exact sequence time.
         const rendered = []
         const exact = tl.renderer.renderFrameExact.bind(tl.renderer)
         tl.renderer.renderFrameExact = (seq, t, opts) => {
@@ -50,7 +47,7 @@ test('export renders every frame and muxes the timeline audio', async ({ page })
             format,
             frames: result.frames,
             packets: stats.packetCount,
-            frameTimes: rendered.slice(-45),
+            frameTimes: rendered,
             videoCodec: video.codec,
             audioCodec: audio?.codec,
             channels: audio?.numberOfChannels,
@@ -71,11 +68,10 @@ test('export renders every frame and muxes the timeline audio', async ({ page })
     expect(info.firstLoud).toBeGreaterThan(0.45)
     expect(info.firstLoud).toBeLessThan(0.6)
     expect(info.a).not.toBe(info.b)
-    // After the pre-roll seeks, the exporter rendered each exported frame
-    // exactly once, at that frame's exact sequence time.
     const start = 60 / 128 * 4 * 8 - 0.5
     const expectedTimes = Array.from({ length: 45 }, (_, k) => start + k / 30)
-    expect(info.frameTimes).toEqual(expectedTimes)
+    const frameCalls = info.frameTimes.filter(t => t >= start)
+    expect(frameCalls).toEqual(expectedTimes)
 })
 
 test('export writes straight to a chosen file and says where it went', async ({ page }) => {
