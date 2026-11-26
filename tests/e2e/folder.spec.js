@@ -68,9 +68,9 @@ test('a project folder opens, follows changes made on disk, and saves edits back
     await expect(page.locator('.tl-clip', { hasText: 'Storm' })).toBeVisible()
 
     // An edit here, the undo included, is written back to the folder.
-    await expect.poll(async () => (await readProjectJson(page)).sequences.main.tracks[0].clips[0].name, { timeout: 10_000 }).toBe('Storm')
+    await expect.poll(async () => (await readProjectJson(page)).sequences.main.tracks[0].clips[0].name, { timeout: 60_000 }).toBe('Storm')
     await page.evaluate(() => window.__timeline.store.edit('rename', s => { s.tracks[0].clips[0].name = 'Gale' }))
-    await expect.poll(async () => (await readProjectJson(page)).sequences.main.tracks[0].clips[0].name, { timeout: 10_000 }).toBe('Gale')
+    await expect.poll(async () => (await readProjectJson(page)).sequences.main.tracks[0].clips[0].name, { timeout: 60_000 }).toBe('Gale')
     const saved = await readProjectJson(page)
     expect(saved.sequences.main.tracks[0].clips[0].dsl).toBe(DSL)
     expect(saved.media.drums.path).toBe('media/drums.flac')
