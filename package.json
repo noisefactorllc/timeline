@@ -12,7 +12,7 @@
   "scripts": {
     "dev": "node scripts/dev-server.mjs 3027",
     "test": "node scripts/unit-tests.mjs",
-    "test:e2e": "node node_modules/@playwright/test/cli.js test",
+    "test:e2e": "node scripts/e2e-tests.mjs",
     "lint": "find js cli \\( -name '*.js' -o -name '*.mjs' \\) -print0 | xargs -0 -n1 node --check",
     "vendor": "node scripts/vendor.mjs",
     "demo-audio": "node scripts/demo-track/render.mjs"
