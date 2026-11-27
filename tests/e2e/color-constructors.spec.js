@@ -79,7 +79,18 @@ test('a malformed color constructor keeps the engine diagnostic and the default 
             canvas.getContext('2d').drawImage(bitmap, 0, 0)
             pixels.push([...canvas.getContext('2d').getImageData(10, 10, 1, 1).data.slice(0, 3)])
         }
-        return { pixels, check: await tl.check() }
+        // The engine reports a malformed constructor as the S002 warning, so
+        // the program still compiles and renders with the default colour.
+        const engine = await import('/js/noisemaker/bundle.js')
+        const codes = ['vec3(0.3, 0.2)', 'vec2(0.3, 0.2)', 'vec4(0.3, 0.2, 0.25)'].map(color => {
+            const dsl = `search synth\nsolid(color: ${color})\n  .write(o0)\nrender(o0)`
+            return engine.compile(dsl).diagnostics.map(d => `${d.code} ${d.severity}`)
+        })
+        const valid = ['vec3(0.3, 0.2, 0.25)', 'vec4(0.3, 0.2, 0.25, 0.4)'].map(color => {
+            const dsl = `search synth\nsolid(color: ${color})\n  .write(o0)\nrender(o0)`
+            return engine.compile(dsl).diagnostics.map(d => `${d.code} ${d.severity}`)
+        })
+        return { pixels, codes, valid, check: await tl.check() }
     })
     // The engine's S002 diagnostic is a warning, so the program still compiles
     // and renders with the parameter's default colour.
@@ -88,6 +99,10 @@ test('a malformed color constructor keeps the engine diagnostic and the default 
             expect(Math.abs(value - DEFAULT[channel]), `malformed clip ${i} channel ${channel}`).toBeLessThanOrEqual(1)
         })
     }
+    expect(result.codes).toEqual([
+        ['S002 warning'], ['S002 warning'], ['S002 warning'],
+    ])
+    expect(result.valid).toEqual([[], []])
     expect(result.check.errors).toEqual([])
     expect(bootErrors).toEqual([])
 })
