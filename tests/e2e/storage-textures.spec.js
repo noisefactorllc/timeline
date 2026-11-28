@@ -71,18 +71,11 @@ async function registerViaZip(page, func, target) {
             }
             : {}),
     })
-    // The status toast lives a few seconds and a slow runner must not race
-    // its lifetime, so the import is awaited and the toast text is read in
-    // the page right after the import resolves. The test still demands the
-    // exact status the app shows on success.
     return page.evaluate(async ({ func, zip }) => {
         await window.__timeline.actions.handleFiles([new File([zip], `${func}.zip`, { type: 'application/zip' })])
         return [...document.querySelectorAll('.hf-toast-message')].map(el => el.textContent)
     }, { func, zip: new Uint8Array(zip) })
 }
-
-/** The status the app shows after an effect zip imports. */
-const importedStatus = func => `Added the effect ${func}. A program uses it with search user, then .${func}()`
 
 /** Render the probe through the app and read one pixel of the frame. */
 async function probePixel(page, func) {
@@ -113,7 +106,7 @@ test('a custom effect that stores straight to outputTex fills the frame', async 
     page.on('pageerror', err => pageErrors.push(err.message))
     const toasts = await registerViaZip(page, 'storageDirectProbe', 'outputTex')
     expect(toasts.at(-1), `the app's status after importing storageDirectProbe; page errors: ${pageErrors.join('; ')}`)
-        .toBe(importedStatus('storageDirectProbe'))
+        .toBe('Added the effect storageDirectProbe. A program uses it with search user, then .storageDirectProbe()')
     const result = await probePixel(page, 'storageDirectProbe')
     result.pixel.forEach((value, channel) => expect(Math.abs(value - [255, 128, 64][channel]), `channel ${channel}`).toBeLessThanOrEqual(1))
     expect(result.check.errors).toEqual([])
@@ -127,7 +120,7 @@ test('a custom effect that stores to a named work texture copies it out', async 
     page.on('pageerror', err => pageErrors.push(err.message))
     const toasts = await registerViaZip(page, 'storageNamedProbe', 'work')
     expect(toasts.at(-1), `the app's status after importing storageNamedProbe; page errors: ${pageErrors.join('; ')}`)
-        .toBe(importedStatus('storageNamedProbe'))
+        .toBe('Added the effect storageNamedProbe. A program uses it with search user, then .storageNamedProbe()')
     const result = await probePixel(page, 'storageNamedProbe')
     result.pixel.forEach((value, channel) => expect(Math.abs(value - [255, 128, 64][channel]), `channel ${channel}`).toBeLessThanOrEqual(1))
     expect(result.check.errors).toEqual([])
